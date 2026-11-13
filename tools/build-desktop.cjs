@@ -25,7 +25,7 @@ function iconPng() {
   const size=256, rows=Buffer.alloc(size*(size*4+1));
   function rect(x,y,w,h,hex){
     const rgb=hex.match(/[a-f0-9]{2}/gi).map(n=>parseInt(n,16));
-    for(let py=47+y*3;py<47+(y+h)*3;py++)for(let px=2+x*3;px<2+(x+w)*3;px++){
+    for(let py=-39+y*7;py<-39+(y+h)*7;py++)for(let px=-320+x*7;px<-320+(x+w)*7;px++){
       if(px<0||py<0||px>=size||py>=size)continue;
       const at=py*(size*4+1)+1+px*4;rows[at]=rgb[0];rows[at+1]=rgb[1];rows[at+2]=rgb[2];rows[at+3]=255;
     }

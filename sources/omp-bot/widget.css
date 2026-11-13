@@ -56,7 +56,7 @@ body[data-quiet=on] .celebration,body[data-motion=off] .celebration{display:none
 @media (min-height:451px) and (max-width:1000px){.bot{width:72px;height:94px}}
 
 /* Palette tokens preserve the pixel garden's painted wood and readable labels. */
-body{font-size:calc(1rem + 4px);--shell:#202e2a;--surface:#30443a;--hover:#435949;--text:#f2e9c9;--muted:#c7d1b7;--edge:#687863;--ground:#78966c;--grass-light:#88a179;--bed:#879c73;--bed-edge:#657f59;--path:#b8a17a;--path-edge:#9b8969;--stone:#b4b49a;--stone-edge:#7c876c;--plaza:#d2c7a2;--label:#d4d8ae;--label-ink:#304b36;background:var(--shell);color:var(--text)}
+body{font-size:calc(1rem + 4px);--shell:#25362c;--surface:#354b38;--hover:#4a6448;--text:#f2e9c9;--muted:#c7d1b7;--edge:#687863;--ground:#8fa477;--grass-light:#acb88d;--bed:#9dac80;--bed-edge:#6c865c;--path:#d7c28b;--path-edge:#bca575;--stone:#b4b49a;--stone-edge:#7c876c;--plaza:#d2c7a2;--label:#e0d3a5;--label-ink:#4b573d;background:var(--shell);color:var(--text)}
 body[data-theme=sunset]{--shell:#392c36;--surface:#60404a;--hover:#77505a;--text:#fff0d8;--muted:#ead0c6;--edge:#b5807a;--ground:#a89576;--grass-light:#beaa84;--bed:#ba9b78;--bed-edge:#8e765f;--path:#d6af85;--path-edge:#ab825f;--stone:#c6a8a0;--stone-edge:#967874;--plaza:#e7c19d;--label:#f2d7b6;--label-ink:#513737;--line:#91636a}
 body[data-theme=moonlight]{--shell:#202939;--surface:#35425b;--hover:#465976;--text:#edf0ff;--muted:#c4d0e6;--edge:#8198bd;--ground:#667e91;--grass-light:#7894a8;--bed:#7990a3;--bed-edge:#53697c;--path:#b0b7c8;--path-edge:#8994af;--stone:#98a6bd;--stone-edge:#687a96;--plaza:#c2c6d8;--label:#d6e0f1;--label-ink:#293b54;--line:#596e91}
 button,select{background:var(--surface);border-color:var(--edge)}button:hover{background:var(--hover)}
@@ -64,8 +64,8 @@ button,select{background:var(--surface);border-color:var(--edge)}button:hover{ba
 footer{border-color:var(--edge)}#scene{border-color:var(--surface);box-shadow:0 3px 0 var(--edge)}
 dialog{background:var(--shell);color:var(--text);border-color:var(--edge)}dialog input,dialog select{background:var(--surface);border-color:var(--edge);color:var(--text);min-height:44px}
 #quiet[aria-pressed=true]{background:var(--hover);border-color:var(--text);color:var(--text)}
-#grass rect{fill:var(--ground)}#grass path{fill:var(--grass-light)}#boards rect{fill:var(--path)}#boards path{fill:var(--path-edge)}
-.meadow-ground>path[fill="#657f59"]{fill:var(--bed-edge)}.meadow-ground>path[fill="#879c73"]{fill:var(--bed)}
+
+
 .station span,.attention-bell span{background:var(--label);color:var(--label-ink);border-color:var(--bed-edge)}
 #empty{background:var(--label);color:var(--label-ink);border-color:var(--edge)}
 .courtyard-ground{display:none}.courtyard-lawn{fill:var(--ground)}.courtyard-stone{fill:var(--stone)}.courtyard-plaza{fill:var(--plaza)}.courtyard-seams{fill:none;stroke:var(--stone-edge);stroke-width:1}
@@ -178,3 +178,58 @@ main{grid-template-rows:auto auto auto minmax(0,1fr)}
 .ranch-pages{display:flex;gap:6px;pointer-events:auto}.ranch-pages button{font-size:14px;padding:7px 14px}.ranch-pages [aria-pressed=true]{border-color:#d6bd86;background:#4b5943}#pipeyard-page{min-height:0;height:100%;overflow:hidden;border:2px solid var(--line)}#pipeyard-frame{width:100%;height:100%;border:0;display:block}body[data-page=pipeyard] main{grid-template-rows:auto minmax(0,1fr)}body[data-page=pipeyard] main>.ranch-bar,body[data-page=pipeyard] main>.wake-feedback,body[data-page=pipeyard] main>.ranch-layout{display:none}#pipeyard-page[hidden]{display:none}body[data-page=pipeyard] #motion{display:none}@media(max-width:650px){header{flex-wrap:wrap}.ranch-pages{order:3;width:100%;justify-content:center}.ranch-pages button{flex:1}}
 
 #pipeyard-page,#pipeyard-frame{pointer-events:auto}
+
+/* Animals share the scenery, never the bot work controls. */
+#residents{pointer-events:none}#residents .bot{pointer-events:auto}
+.ranch-animal-layer{position:absolute;inset:14px;z-index:1;pointer-events:none;overflow:hidden}
+.ranch-animal-layer button{position:absolute;top:0;left:0;min-width:40px;min-height:40px;padding:0;border:0;background:transparent!important;pointer-events:auto;touch-action:none;cursor:grab;line-height:0;z-index:2}
+.ranch-animal-layer button:hover{filter:drop-shadow(0 2px 2px #20362766)}
+.ranch-animal-layer button:focus-visible{outline:2px dashed #fff0b7;outline-offset:2px}
+.ranch-animal-layer .pasture-cow{width:64px;height:44px}
+.ranch-animal-layer .pasture-chicken,.ranch-animal-layer .pasture-sheep{width:42px;height:40px}
+.ranch-animal-layer svg{width:100%;height:100%;pointer-events:none}
+.ranch-animal-layer [data-facing=left] svg{transform:scaleX(-1)}
+.ranch-animal-layer .hay-bale{width:50px;height:40px;z-index:1}
+.ranch-animal-layer .picked-up{cursor:grabbing;filter:drop-shadow(0 8px 3px #20362766)}
+body.ranch-viewing-animal #ranch-desk{display:none}
+#ranch-animal-desk{display:flex;flex-direction:column;min-height:0;overflow:auto;border-left:2px solid var(--edge);padding:12px;background:var(--shell)}
+#ranch-animal-desk[hidden]{display:none}
+#ranch-animal-desk h2{font-size:18px;margin:0 0 8px}
+#ranch-animal-desk .creature-panel{padding:10px 0;overflow:visible}
+#ranch-animal-desk .creature-panel[hidden]{display:none}
+#ranch-animal-desk .animal-portrait{width:110px;height:90px;margin:0 auto;pointer-events:none}
+#ranch-animal-desk .animal-portrait svg{width:100%;height:100%}
+#ranch-animal-desk meter{width:100%;height:24px}
+#ranch-animal-desk label{display:block;margin-top:12px}
+#ranch-animal-desk select,#ranch-animal-desk input{width:100%}
+#ranch-animal-desk .hint,#ranch-animal-desk .creature-save-status{font-size:12px;color:var(--muted)}
+#ranch-animal-desk .creature-panel form{margin:12px 0}
+.colored-animal .cow-body>path:first-child,.colored-animal .cow-head>path:first-child,.colored-animal .chicken-body>path:first-child,.colored-animal .chicken-head>path:first-child,.colored-animal .sheep-wool,.colored-animal .sheep-head>path:nth-of-type(2){fill:var(--animal-coat)}
+.colored-animal .cow-body>path:nth-child(2),.colored-animal .chicken-body>path:nth-child(2){fill:var(--animal-shade)}
+.colored-animal .sheep-wool{stroke:var(--animal-shade)}
+@media(max-width:1100px){#ranch-animal-desk{border-left:0;border-top:2px solid var(--edge)}}
+
+#wake-bell{z-index:4}
+
+.ranch-animal-layer:not(:has(.pasture-cow,.pasture-chicken,.pasture-sheep)) .hay-bale{display:none}
+
+.ranch-animal-status{display:none}.ranch-animal-status.needs-attention{display:flex;align-items:center;gap:8px;flex-basis:100%;font-size:12px;color:var(--ink)}.ranch-bar:has(.ranch-animal-status.needs-attention){flex-wrap:wrap}
+
+/* Pipeyard pasture materials, at screen-pixel scale so XL does not stretch the rails or grass. */
+#scene{background:var(--ground);box-shadow:inset 0 0 0 2px var(--label),0 3px 0 var(--edge)}
+.landscape{pointer-events:none}
+.ranch-pasture{position:absolute;inset:0;overflow:hidden;pointer-events:none;background:linear-gradient(var(--grass-light) 0 12%,var(--ground) 12% 68%,color-mix(in srgb,var(--ground) 88%,var(--bed-edge)) 68%)}
+.ranch-pasture:after{content:'';position:absolute;inset:22px 12px 16px;border-inline:6px double var(--path);opacity:.85}
+.pasture-hills{position:absolute;left:-5%;top:-55px;width:110%;height:94px;border-radius:50%;background:var(--bed-edge);box-shadow:100px 14px 0 color-mix(in srgb,var(--bed-edge) 55%,var(--grass-light));opacity:.65}
+.pasture-grass{position:absolute;inset:0;background:repeating-linear-gradient(0deg,transparent 0 31px,color-mix(in srgb,var(--grass-light) 28%,transparent) 31px 33px),repeating-linear-gradient(90deg,transparent 0 53px,color-mix(in srgb,var(--bed-edge) 18%,transparent) 53px 56px)}
+.pasture-grass:after{content:'';position:absolute;inset:25px 0 0;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='137' height='103' viewBox='0 0 137 103'%3E%3Cpath fill='%23304b36' fill-opacity='.20' d='M16 22h2v4h2v-7h2v7h2v-3h2v6H16zM95 71h2v3h2v-6h2v6h2v-4h2v7H95z'/%3E%3Cpath fill='%23f3e6bb' fill-opacity='.20' d='M62 46h7v2h-7zM118 14h5v2h-5zM34 88h6v2h-6z'/%3E%3C/svg%3E")}
+.pasture-rail{position:absolute;left:12px;right:12px;height:28px;background:repeating-linear-gradient(90deg,transparent 0 40px,var(--path-edge) 40px 46px,transparent 46px 72px),linear-gradient(transparent 0 6px,var(--path) 6px 11px,transparent 11px 20px,var(--path-edge) 20px 25px,transparent 25px);filter:drop-shadow(0 3px 0 #344f3e40)}
+.pasture-rail-back{top:9px}.pasture-rail-front{bottom:9px}
+.station-clearing{fill:var(--grass-light);opacity:.38}
+.pasture-trail{fill:var(--path);opacity:.48}
+.pasture-trail-grain{fill:none;stroke:var(--path-edge);stroke-width:1;opacity:.45}
+body:not([data-map]),body[data-map=meadow]{--ranch-sign-edge:color-mix(in srgb,var(--path-edge) 65%,var(--label-ink))}
+body:not([data-map]) .map-fence,body[data-map=meadow] .map-fence{display:none}
+body:is([data-map=courtyard],[data-map=glasshouse],[data-map=rooftop],[data-map=depot]) .ranch-pasture{display:none}
+.station span{border-color:var(--ranch-sign-edge,var(--bed-edge));box-shadow:2px 3px 0 #344f3e30}
+@media(max-height:450px){.pasture-rail{height:20px;background:repeating-linear-gradient(90deg,transparent 0 40px,var(--path-edge) 40px 46px,transparent 46px 72px),linear-gradient(transparent 0 3px,var(--path) 3px 7px,transparent 7px 13px,var(--path-edge) 13px 17px,transparent 17px)}.pasture-rail-back{top:5px}.pasture-rail-front{bottom:5px}.ranch-pasture:after{inset:15px 12px 10px}.pasture-hills{top:-66px}}

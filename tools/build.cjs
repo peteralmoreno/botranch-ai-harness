@@ -9,7 +9,7 @@ const projects = {
 };
 const common = ['manifest.json', 'translation.json', 'index.html', 'resources/icon.svg'];
 const widgetFiles = {
-  ranch: [...common, 'app.js', 'sprites.js', 'world.js', 'appearance.js', 'widget.css'],
+  ranch: [...common, 'ranch-animals.js', 'app.js', 'sprites.js', 'world.js', 'appearance.js', 'widget.css'],
   desk: [...common, 'app.js', 'appearance.js', 'widget.css'],
 };
 const ranchFiles = [
@@ -19,7 +19,7 @@ const ranchFiles = [
   'Focus-Terminal.ps1', 'Terminal-Control.ps1', 'Start-Bot-Ranch.ps1', 'native/Terminal-Control.cs',
   'Launch-Companion.cmd', 'Open Bot Ranch Setup.cmd', 'Start-Bot-Ranch.cmd', 'Start-OMP.cmd',
   'launch-companion.sh', 'open-setup.sh', 'ranch-terminal.sh', 'start-bot-ranch.sh', 'start-omp.sh',
-  'setup/bot-palette.mjs','setup/pipeyard-ranch.mjs','setup/pipeyard-ranch.css','setup/yard-creatures.mjs','setup/yard-creature-behavior.mjs', 'setup/pipeyard-feed.mjs', 'setup/pipeyard-demo.mjs', 'setup/pipeyard.html', 'setup/pipeyard.js', 'setup/pipeyard.css', 'setup/index.html', 'setup/app.js', 'setup/style.css', 'setup/settings.css', 'setup/board.html', 'setup/board.js', 'setup/board.css',
+  'setup/yard-animal-art.mjs','setup/bot-palette.mjs','setup/pipeyard-ranch.mjs','setup/pipeyard-ranch.css','setup/yard-creatures.mjs','setup/yard-creature-behavior.mjs', 'setup/pipeyard-feed.mjs', 'setup/pipeyard-demo.mjs', 'setup/pipeyard.html', 'setup/pipeyard.js', 'setup/pipeyard.css', 'setup/index.html', 'setup/app.js', 'setup/style.css', 'setup/settings.css', 'setup/board.html', 'setup/board.js', 'setup/board.css',
 ];
 const releaseDocs = ['LICENSE', 'CHANGELOG.md', 'SECURITY.md', 'THIRD-PARTY-NOTICES.md'];
 const ranchGuides = ['testing-and-troubleshooting.md', 'build-and-import.md', 'pipeyard-agent-connections.md', 'bot-ranch-pipeyard.md', 'bot-ranch-loop.md', 'bot-ranch-pipeline.md', 'bot-ranch-desktop.md', 'bot-ranch-install.md', 'bot-ranch-ai-sync.md', 'bot-ranch-api.md'];

@@ -10,7 +10,7 @@ for(const widget of ['omp-bot','ranch-desk'])test(widget+' appearance persists w
  for(const size of [{width:1688,height:696},{width:840,height:696},{width:420,height:348}]){
   await page.setViewportSize(size);const box=await page.getByRole('button',{name:'Appearance settings'}).boundingBox();expect(box.width).toBeGreaterThanOrEqual(44);expect(box.height).toBeGreaterThanOrEqual(44);expect(box.x+box.width).toBeLessThanOrEqual(size.width);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
-  if ((widget==='omp-bot'&&size.width===1688)||(widget==='ranch-desk'&&size.width===840)) await page.screenshot({path:'artifacts/releases/'+(widget==='omp-bot'?'bot-ranch':widget)+'/preview.png'});
+  if ((widget==='omp-bot'&&size.width===1688)||(widget==='ranch-desk'&&size.width===840)) if(process.env.BOT_RANCH_CAPTURE_TEST_IMAGES==='1')await page.screenshot({path:'artifacts/releases/'+(widget==='omp-bot'?'bot-ranch':widget)+'/preview.png'});
  }
  expect(errors).toEqual([]);
 });

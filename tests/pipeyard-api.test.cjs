@@ -99,3 +99,19 @@ test('paired and Organize clients can change appearance, including Board-owned p
  assert.equal((await request('/control/pipeyard/action',{action:'set-appearance',id:'board-visual-task',shape:'orchestrator',color:'#b51f43'},'a'.repeat(64))).status,200);
  const snapshot=await (await request('/admin/pipeyard/snapshot')).json(),board=snapshot.runs.find(r=>r.id==='board-visual-task');assert.equal(board.shape,'orchestrator');assert.equal(board.color,'#b51f43');assert.equal(manager.tasks.at(-1).family.color,'#61b7ba');
 }));
+
+
+test('Ranch animals start empty, persist separately and enforce connection scope',()=>fixture(async({request,manager})=>{
+ const route='/control/ranch/creatures',key='a'.repeat(64);
+ assert.equal((await request(route,null,'wrong')).status,401);
+ const empty=await (await request(route,null,key)).json();assert.deepEqual(empty.creatures,[]);
+ const yardBefore=await (await request('/control/pipeyard/creatures',null,key)).json();
+ const next={...empty,creatures:[{id:'cow-one',name:'Clover',type:'cow',variant:1,x:.5,y:.5,fullness:25,eating:false}]};
+ assert.equal((await request(route,next,key)).status,200);
+ const saved=await (await request(route,null,key)).json();assert.equal(saved.creatures[0].name,'Clover');
+ assert.deepEqual(await (await request('/control/pipeyard/creatures',null,key)).json(),yardBefore);
+ assert.equal((await request(route,{...saved,scope:'another-home'},key)).status,409);
+ assert.equal((await request(route,next,key)).status,409);
+ assert(fs.existsSync(path.join(manager.library.root,'ranch','creatures.json')));
+ assert.equal((await request('/admin/ai/pipeyard/ranch-creatures')).status,404);
+}));

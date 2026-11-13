@@ -1,6 +1,6 @@
 # botRanch AI Harness
 
-Version **1.0.0**.
+Version **1.0.3**.
 
 A Windows companion for local AI work, with a playful Ranch view for desktop or Corsair XENEON EDGE.
 

@@ -16,7 +16,7 @@ export function createPipeyardApi(manager){
   async handle({method,url,body}){
    const ai=url.startsWith('/admin/ai/pipeyard/'),prefix=ai?'/admin/ai/pipeyard/':'/admin/pipeyard/',route=url.slice(prefix.length);
    try{
-    if(!ai&&route==='creatures'&&['GET','POST'].includes(method)){const scope=manager.library.root;if(method==='POST'&&body?.scope!==scope)return {status:409,body:{error:'Bot home changed. Reload the yard before saving animals.'}};const store=creatureStore.createCreatureStore(path.join(scope,'pipeyard','creatures.json'));return {status:200,body:{...(method==='GET'?store.read():store.save(body)),scope}};}
+    if(!ai&&['creatures','ranch-creatures'].includes(route)&&['GET','POST'].includes(method)){const scope=manager.library.root;if(method==='POST'&&body?.scope!==scope)return {status:409,body:{error:'Bot home changed. Reload the yard before saving animals.'}};const store=creatureStore.createCreatureStore(path.join(scope,route==='ranch-creatures'?'ranch':'pipeyard','creatures.json'),{empty:route==='ranch-creatures'});return {status:200,body:{...(method==='GET'?store.read():store.save(body)),scope}};}
     if(method==='GET'&&route==='catalog')return {status:200,body:pipeyardCatalog};
     if(method==='GET'&&route==='snapshot'){const snapshot=yard().snapshot();return {status:200,body:{...snapshot,runs:[...snapshot.runs,...boardRuns(manager).map(r=>({...r,shape:'standard',...yard().boardAppearances[r.id]}))]}};}
     if(!ai&&method==='GET'&&route==='config')return {status:200,body:yard().configuration()};

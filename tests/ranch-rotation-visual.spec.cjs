@@ -19,10 +19,10 @@ test('all map and theme combinations keep six residents and bell reachable at La
    await expect.poll(()=>page.locator('.bot').evaluateAll(bots=>bots.every(b=>{const r=b.getBoundingClientRect(),s=document.getElementById('scene').getBoundingClientRect();return r.left>=s.left&&r.right<=s.right&&r.top>=s.top&&r.bottom<=s.bottom;}))).toBe(true);
    expect(await page.locator('#wake-bell').evaluate(b=>{const r=b.getBoundingClientRect();return document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)?.closest('#wake-bell')===b;})).toBe(true);
    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth&&document.documentElement.scrollHeight<=innerHeight)).toBe(true);
-   if(['glasshouse','rooftop','depot'].includes(map)&&theme==='crimson')await page.screenshot({path:`artifacts/omp-bot/rotation-${map}-${theme}-${size}.png`});
+   if(['glasshouse','rooftop','depot'].includes(map)&&theme==='crimson')if(process.env.BOT_RANCH_CAPTURE_TEST_IMAGES==='1')await page.screenshot({path:`artifacts/omp-bot/rotation-${map}-${theme}-${size}.png`});
   }
  }
- await page.locator('#all-updates').click();await expect(page.locator('.feed-avatar .portrait')).toHaveCount(6);await page.screenshot({path:'artifacts/omp-bot/rotation-feed-portraits-xl.png'});expect(errors).toEqual([]);
+ await page.locator('#all-updates').click();await expect(page.locator('.feed-avatar .portrait')).toHaveCount(6);if(process.env.BOT_RANCH_CAPTURE_TEST_IMAGES==='1')await page.screenshot({path:'artifacts/omp-bot/rotation-feed-portraits-xl.png'});expect(errors).toEqual([]);
 });
 for(const [motion,quiet,want]of [['off','on','still'],['on','on','calm'],['on','off','lively']])test('legacy motion '+motion+'/'+quiet+' migrates to '+want,async({page})=>{
  await ranch(page,{motion,quiet});await expect(page.locator('body')).toHaveAttribute('data-motion',want);await expect(page.locator('#quiet')).toHaveCount(0);

@@ -18,3 +18,5 @@ Each task starts a fresh conversation with bounded, project-scoped continuity. S
 Ranch taps and ordinary dragging are playful inspection. Explicit controls change work. The bell can wake sleeping residents, request work checks, call a Project Manager, or pause new pickup. Pausing pickup leaves current work running; offline/charging bots remain off.
 
 Motion settings affect animation only. Menu-edge dead space remains available for iCUE gestures. Bot updates appear in the feed and brief speech bubbles; detailed task editing stays in the sidebar.
+
+Use **＋ Animal** on Ranch to add a cow, chicken, or sheep. Click an animal for its name, color, and fullness controls; drag it to move it. **Back to bots** returns to the bot Desk. Ranch starts with no animals and saves its own herd under `<bot-home>/ranch/creatures.json`; Pipeyard keeps its separate herd. Animals do not dispatch or interrupt bot tasks.

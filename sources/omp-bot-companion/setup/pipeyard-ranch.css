@@ -12,7 +12,7 @@
 .pasture-scenery:before{content:'';position:absolute;inset:50px 9px 12px;border-left:6px double #d7c28b;border-right:6px double #d7c28b}
 .distant-hill{position:absolute;left:-5%;top:-55px;width:110%;height:130px;background:#6c865c;border-radius:50%;box-shadow:100px 15px 0 #839969}
 .fence{position:absolute;left:10px;right:10px;height:28px;background:repeating-linear-gradient(90deg,transparent 0 40px,#bda879 40px 46px,transparent 46px 72px),linear-gradient(transparent 0 6px,#d7c28b 6px 11px,transparent 11px 20px,#bca575 20px 25px,transparent 25px);filter:drop-shadow(0 3px 0 #445d3940)}
-.fence-back{top:52px;transform:skewY(-1deg)}.fence-front{bottom:10px}.pasture-sign{position:absolute;top:22px;right:22px;left:auto;background:#e0d3a5;border:2px solid #655c40;color:#4b573d;padding:4px 10px;font:12px Consolas,monospace;box-shadow:2px 3px 0 #526d4140}
+.fence-back{top:52px}.fence-front{bottom:10px}.pasture-sign{position:absolute;top:22px;right:22px;left:auto;background:#e0d3a5;border:2px solid #655c40;color:#4b573d;padding:4px 10px;font:12px Consolas,monospace;box-shadow:2px 3px 0 #526d4140}
 .cows{position:absolute;inset:0;pointer-events:none}.pasture-cow{position:absolute;top:0;left:0;width:52px;height:35px;pointer-events:none;will-change:transform}.pasture-cow svg{width:100%;height:100%;overflow:visible}.pasture-cow[data-facing=left] svg{transform:scaleX(-1)}.cow-2{width:46px}.cow-3{width:49px}.cow-head{transform-origin:62px 22px}.pasture-cow[data-grazing=true] .cow-head{animation:cow-graze 3s ease-in-out infinite}
 @keyframes cow-graze{0%,100%{transform:rotate(0)}50%{transform:rotate(12deg) translateY(2px)}}
 

@@ -32,6 +32,7 @@ Inspect reads/previews; Organize applies organizational edits; Operate permits e
 - `POST /control/project-manager` with `{id}`: focus the selected active PM.
 - `POST /control/ui/attention`: open desktop attention controls.
 - `GET /control/pipeyard/snapshot`, `POST /control/pipeyard/action`: restricted local pipe controls.
+- `GET/POST /control/ranch/creatures`: separate, initially empty Ranch herd; requires the connection key, revision, and current home scope for writes.
 - `GET/POST /admin/pipeyard/creatures` and `/control/pipeyard/creatures`: revisioned animal state.
 
 The widget pipe action allowlist is `set-appearance`, `create-local`, `connect-local`, `register`, `note`, `estimate-progress`, `review-progress`, `refresh`, `check-due`, `pause-tracking`, `resume-tracking`, `clear`, `restore`. External mutations/configuration use separate authorized interfaces. A successful HTTP response may mean requested/pending, not completed.

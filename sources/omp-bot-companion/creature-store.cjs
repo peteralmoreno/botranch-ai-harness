@@ -7,8 +7,8 @@ function validate(input){
  const creatures=input.creatures.map(item=>{const p=position(item);if(!['cow','chicken','sheep'].includes(item.type)||typeof item.name!=='string'||!item.name.trim()||item.name.length>80||/[\x00-\x1f\x7f]/.test(item.name)||!Number.isFinite(item.fullness)||item.fullness<0||item.fullness>100||!Number.isInteger(item.variant)||item.variant<1||item.variant>5||typeof item.eating!=='boolean')throw Error('Invalid animal name, species, fullness or variant.');return {...p,type:item.type,variant:item.variant,name:item.name.trim(),fullness:item.fullness,eating:item.eating};});
  const hay=input.hay.map(position);return {version:1,revision:input.revision,creatures,hay};
 }
-function createCreatureStore(file){
- function read(){if(!fs.existsSync(file)){const initial={...defaults(),editRevision:0};write(initial);return initial;}const value=JSON.parse(fs.readFileSync(file,'utf8'));if(!Number.isFinite(value.updatedAt)||value.updatedAt<0)throw Error('Animal file has an invalid save timestamp.');return {...validate(value),editRevision:Number.isInteger(value.editRevision)?value.editRevision:value.revision,updatedAt:value.updatedAt};}
+function createCreatureStore(file,{empty=false}={}){
+ function read(){if(!fs.existsSync(file)){const initial={...defaults(),...(empty?{creatures:[]}:{}),editRevision:0};write(initial);return initial;}const value=JSON.parse(fs.readFileSync(file,'utf8'));if(!Number.isFinite(value.updatedAt)||value.updatedAt<0)throw Error('Animal file has an invalid save timestamp.');return {...validate(value),editRevision:Number.isInteger(value.editRevision)?value.editRevision:value.revision,updatedAt:value.updatedAt};}
  function write(state){fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file+'.tmp',JSON.stringify(state,null,2),{mode:0o600});fs.renameSync(file+'.tmp',file);}
  function save(input){
   let next=validate(input);const current=read(),background=input.background===true;

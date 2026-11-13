@@ -1,11 +1,11 @@
 import {HAY_RADIUS,HUNGRY_AT,FULL_AT,ANIMAL_LIMIT,updateFullness,wantsHay} from './yard-creature-behavior.mjs';
 // Variant numbers stay compatible with the saved roster (including chestnut/golden cows).
 const animalColors=[['Cream','#eee7d4','#c9c3ae'],['Slate','#a3afb2','#707f85'],['Charcoal','#595e58','#3d443f'],['Chestnut','#b57950','#714a37'],['Golden','#dfbd7a','#b68c4e']];
-export async function mountCreatures({layer,art,hayMarkup,dragTick,loadState,saveState}){
- const reduced=matchMedia('(prefers-reduced-motion: reduce)'),desk=document.getElementById('pipeline-desk'),heading=desk.querySelector('h2');
+export async function mountCreatures({layer,art,hayMarkup,dragTick,loadState,saveState,desk=document.getElementById('pipeline-desk'),toolbar=document.querySelector('.yard-toolbar'),addControl,closeControl=document.getElementById('desk-all'),deskTitle='Pipeline Desk',onSelect=()=>{},onClose=()=>{},isEnabled=()=>true,moving=()=>true,bounds={left:20,top:65,right:20,bottom:40}}){
+ const reduced=matchMedia('(prefers-reduced-motion: reduce)'),heading=desk.querySelector('h2');
  const make=(tag,text,cls)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;};
- const control=make('button','＋ Add animal');control.id='yard-add-animal';control.type='button';document.querySelector('.yard-toolbar').append(control);
- const saveStatus=make('span','Loading animals…','creature-save-status');saveStatus.setAttribute('role','status');document.querySelector('.yard-toolbar').append(saveStatus);
+ const control=addControl||make('button','＋ Add animal');if(!addControl)control.id='yard-add-animal';control.type='button';if(!control.parentNode)toolbar.append(control);
+ const saveStatus=make('span','Loading animals…','creature-save-status');saveStatus.setAttribute('role','status');toolbar.append(saveStatus);
  let saved,revision=0,saving=false,queued=false,dirty=false,conflict=false,editSequence=0,held=null,selected=null,last=performance.now(),lastNeeds=Date.now(),lastUI=0;
  const herd=[],bales=[],panel=make('section',undefined,'creature-panel');panel.hidden=true;desk.append(panel);
  const saveWaiters=[];
@@ -14,7 +14,7 @@ export async function mountCreatures({layer,art,hayMarkup,dragTick,loadState,sav
  function lockEdits(){conflict=true;release(true);control.disabled=true;for(const button of layer.querySelectorAll('button'))button.disabled=true;for(const input of panel.querySelectorAll('input,select,button'))input.disabled=true;const reload=make('button','Reload animals');reload.type='button';reload.onclick=()=>location.reload();saveStatus.after(reload);}
  async function save(background=false){
   if(!background){dirty=true;editSequence++;}
-  if(conflict)return false;
+  if(conflict||!isEnabled())return false;
   if(background&&(held||panel.contains(document.activeElement)&&document.activeElement.matches('input,select')))return false;
   if(background&&dirty)background=false;
   if(background&&(!layer.clientWidth||!layer.clientHeight))return false;
@@ -38,15 +38,15 @@ export async function mountCreatures({layer,art,hayMarkup,dragTick,loadState,sav
   for(const data of next.creatures){let a=herd.find(item=>item.id===data.id);if(!a){addCreature(data);continue;}Object.assign(a,data);announceName(a);applyColor(a.actor,a.variant);paint(a);}
   if(selected&&!panel.contains(document.activeElement))showAnimal(selected);
  }
- function bound(a){const w=layer.clientWidth,h=layer.clientHeight;if(!w||!h)return;a.x=Math.max(20,Math.min(w-a.actor.offsetWidth-20,a.x*w))/w;a.y=Math.max(65,Math.min(h-a.actor.offsetHeight-40,a.y*h))/h;}
+ function bound(a){const w=layer.clientWidth,h=layer.clientHeight;if(!w||!h)return;a.x=Math.max(Math.min(bounds.left,Math.max(0,w-a.actor.offsetWidth)),Math.min(w-a.actor.offsetWidth-bounds.right,a.x*w))/w;a.y=Math.max(Math.min(bounds.top,Math.max(0,h-a.actor.offsetHeight)),Math.min(h-a.actor.offsetHeight-bounds.bottom,a.y*h))/h;}
  function paint(a){bound(a);a.actor.style.transform=`translate(${a.x*layer.clientWidth}px,${a.y*layer.clientHeight}px)`;}
  function announceName(a){a.actor.setAttribute('aria-label',a.name+', '+a.type+'. Click for details; drag or use arrow keys to move.');a.actor.title=a.name;}
  function applyColor(node,variant){const color=animalColors[variant-1];node.style.setProperty('--animal-coat',color[1]);node.style.setProperty('--animal-shade',color[2]);node.classList.add('colored-animal');}
  function colorPicker(parent,id,variant=1){const label=make('label','Animal color'),select=make('select');label.htmlFor=id;select.id=id;animalColors.forEach(([name],i)=>{const option=make('option',name);option.value=String(i+1);select.append(option);});select.value=String(variant);parent.append(label,select);return select;}
  function wanderTarget(a){a.tx=.06+Math.random()*.88;a.ty=.15+Math.random()*.7;a.pause=0;}
- function closePanel(){selected=null;panel.hidden=true;desk.classList.remove('viewing-creature');heading.textContent='Pipeline Desk';}
+ function closePanel(){selected=null;panel.hidden=true;desk.classList.remove('viewing-creature');heading.textContent=deskTitle;onClose();}
  function showAnimal(a){
-  selected=a;panel.replaceChildren();panel.hidden=false;desk.classList.add('viewing-creature');heading.textContent='Animal Desk';
+  onSelect();selected=a;panel.replaceChildren();panel.hidden=false;desk.classList.add('viewing-creature');heading.textContent='Animal Desk';
   const portrait=make('div',undefined,'animal-portrait '+a.actor.className);portrait.innerHTML=art[a.type];applyColor(portrait,a.variant);
   const name=make('h3',a.name),kind=make('p',a.type[0].toUpperCase()+a.type.slice(1),'hint');panel.append(portrait,name,kind);
   const meterLabel=make('label','Fullness'),meter=make('meter');meter.id='animal-fullness';meter.min=0;meter.max=100;meter.low=HUNGRY_AT;meter.high=FULL_AT;meter.optimum=100;meterLabel.htmlFor=meter.id;
@@ -63,12 +63,12 @@ export async function mountCreatures({layer,art,hayMarkup,dragTick,loadState,sav
   if(!cancel&&!moving.moved&&a.type)showAnimal(a);
  }
  function wire(a){
-  a.actor.addEventListener('pointerdown',event=>{if(event.button!==0||!event.isPrimary||held)return;event.preventDefault();event.stopPropagation();const box=a.actor.getBoundingClientRect();held={a,pointer:event.pointerId,x:a.x,y:a.y,startX:event.clientX,startY:event.clientY,dx:event.clientX-box.left,dy:event.clientY-box.top,moved:false};a.actor.setPointerCapture(event.pointerId);a.actor.focus({preventScroll:true});});
+  a.actor.addEventListener('pointerdown',event=>{if(!isEnabled()||event.button!==0||!event.isPrimary||held)return;event.preventDefault();event.stopPropagation();const box=a.actor.getBoundingClientRect();held={a,pointer:event.pointerId,x:a.x,y:a.y,startX:event.clientX,startY:event.clientY,dx:event.clientX-box.left,dy:event.clientY-box.top,moved:false};a.actor.setPointerCapture(event.pointerId);a.actor.focus({preventScroll:true});});
   a.actor.addEventListener('pointermove',event=>{if(held?.a!==a||held.pointer!==event.pointerId)return;event.preventDefault();if(Math.hypot(event.clientX-held.startX,event.clientY-held.startY)<5&&!held.moved)return;held.moved=true;a.actor.classList.add('picked-up');const box=layer.getBoundingClientRect();a.x=(event.clientX-box.left-held.dx)/box.width;a.y=(event.clientY-box.top-held.dy)/box.height;paint(a);});
   a.actor.addEventListener('pointerup',event=>{if(held?.a===a&&held.pointer===event.pointerId)release();});
   for(const type of ['pointercancel','lostpointercapture'])a.actor.addEventListener(type,()=>{if(held?.a===a)release(true);});
-  a.actor.addEventListener('click',event=>{if(event.detail===0&&a.type)showAnimal(a);});
-  a.actor.addEventListener('keydown',event=>{if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key))return;event.preventDefault();const step=event.shiftKey?40:15;a.x+=(event.key==='ArrowRight'?step:event.key==='ArrowLeft'?-step:0)/layer.clientWidth;a.y+=(event.key==='ArrowDown'?step:event.key==='ArrowUp'?-step:0)/layer.clientHeight;if(a.type){a.eating=false;a.target=null;wanderTarget(a);}paint(a);void save();});
+  a.actor.addEventListener('click',event=>{if(isEnabled()&&event.detail===0&&a.type)showAnimal(a);});
+  a.actor.addEventListener('keydown',event=>{if(!isEnabled()||!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key))return;event.preventDefault();const step=event.shiftKey?40:15;a.x+=(event.key==='ArrowRight'?step:event.key==='ArrowLeft'?-step:0)/layer.clientWidth;a.y+=(event.key==='ArrowDown'?step:event.key==='ArrowUp'?-step:0)/layer.clientHeight;if(a.type){a.eating=false;a.target=null;wanderTarget(a);}paint(a);void save();});
  }
  function addCreature(data){const actor=make('button',undefined,'pasture-'+data.type);actor.type='button';actor.innerHTML=art[data.type];applyColor(actor,data.variant);layer.append(actor);const a={...data,actor,pause:0,target:null,speed:data.type==='chicken'?24:data.type==='sheep'?13:14,angle:Math.random()*Math.PI*2};wanderTarget(a);herd.push(a);announceName(a);paint(a);wire(a);return a;}
  layer.replaceChildren();
@@ -77,14 +77,15 @@ export async function mountCreatures({layer,art,hayMarkup,dragTick,loadState,sav
  for(const data of saved.creatures){updateFullness(data,offline,false);addCreature(data);}
  saveStatus.textContent='Animals saved locally';
  control.onclick=()=>{
+  if(!isEnabled())return;
   const dialog=make('dialog'),form=make('form');dialog.setAttribute('aria-label','Add animal');form.append(make('h2','Add animal'));
   const label=make('label','Animal species'),species=make('select');species.id='animal-species';label.htmlFor=species.id;for(const kind of ['cow','chicken','sheep']){const option=make('option',kind[0].toUpperCase()+kind.slice(1));option.value=kind;species.append(option);}
   const nameLabel=make('label','New animal name'),name=make('input');name.id='new-animal-name';nameLabel.htmlFor=name.id;name.maxLength=80;name.placeholder='Optional';
   form.append(label,species,nameLabel,name);const color=colorPicker(form,'new-animal-color');
   const add=make('button','Add to pasture'),cancel=make('button','Cancel animal'),error=make('p','','error');add.type='submit';cancel.type='button';cancel.onclick=()=>dialog.close();form.append(make('p','Arrives hungry at 25% fullness.','hint'),make('p',herd.length+' / '+ANIMAL_LIMIT+' animals','hint'),error,add,cancel);
-  form.onsubmit=async event=>{event.preventDefault();if(herd.length>=ANIMAL_LIMIT){error.textContent='The pasture holds up to '+ANIMAL_LIMIT+' animals. Remove one to make room.';return;}const kind=species.value,a=addCreature({id:'animal-'+crypto.randomUUID(),type:kind,variant:Number(color.value),name:name.value.trim()||kind[0].toUpperCase()+kind.slice(1)+' '+(herd.filter(a=>a.type===kind).length+1),x:.75+Math.random()*.15,y:.3+Math.random()*.4,fullness:HUNGRY_AT,eating:false});dialog.close();showAnimal(a);await save();};dialog.append(form);dialog.addEventListener('close',()=>dialog.remove(),{once:true});document.body.append(dialog);dialog.showModal();
+  form.onsubmit=async event=>{event.preventDefault();if(!isEnabled()){error.textContent='Reconnect before adding an animal.';return;}if(herd.length>=ANIMAL_LIMIT){error.textContent='The pasture holds up to '+ANIMAL_LIMIT+' animals. Remove one to make room.';return;}const kind=species.value,a=addCreature({id:'animal-'+crypto.randomUUID(),type:kind,variant:Number(color.value),name:name.value.trim()||kind[0].toUpperCase()+kind.slice(1)+' '+(herd.filter(a=>a.type===kind).length+1),x:.75+Math.random()*.15,y:.3+Math.random()*.4,fullness:HUNGRY_AT,eating:false});dialog.close();showAnimal(a);await save();};dialog.append(form);dialog.addEventListener('close',()=>dialog.remove(),{once:true});document.body.append(dialog);dialog.showModal();
  };
- document.getElementById('desk-all').addEventListener('click',closePanel);
+ closeControl?.addEventListener('click',closePanel);
  document.addEventListener('pipeyard:select-pipeline',closePanel);
  document.addEventListener('click',event=>{if(event.target.closest('.pipe-tile'))closePanel();});
  window.addEventListener('keydown',event=>{if(event.key==='Escape'&&held){event.preventDefault();release(true);}});window.addEventListener('blur',()=>release(true));
@@ -101,12 +102,12 @@ export async function mountCreatures({layer,art,hayMarkup,dragTick,loadState,sav
    const atHay=!!a.target&&Math.hypot((a.target.x-a.x)*width,(a.target.y-a.y)*height)<75;
    updateFullness(a,needsDt,atHay);
    if(a.fullness>=FULL_AT&&a.target){a.target=null;a.eating=false;wanderTarget(a);}
-   if(!reduced.matches&&!document.hidden){if(a.pause>0)a.pause-=dt;else{const dx=(a.tx-a.x)*width,dy=(a.ty-a.y)*height,distance=Math.hypot(dx,dy),step=Math.min(distance,a.speed*dt);if(distance<2){a.pause=1.5+Math.random()*4;if(!a.target)wanderTarget(a);}else{a.x+=dx/distance*step/width;a.y+=dy/distance*step/height;a.actor.dataset.facing=dx<0?'left':'right';}}}
+   if(!reduced.matches&&!document.hidden&&moving()){if(a.pause>0)a.pause-=dt;else{const dx=(a.tx-a.x)*width,dy=(a.ty-a.y)*height,distance=Math.hypot(dx,dy),step=Math.min(distance,a.speed*dt);if(distance<2){a.pause=1.5+Math.random()*4;if(!a.target)wanderTarget(a);}else{a.x+=dx/distance*step/width;a.y+=dy/distance*step/height;a.actor.dataset.facing=dx<0?'left':'right';}}}
    paint(a);a.actor.dataset.grazing=String(atHay||a.pause>0);a.actor.dataset.activity=atHay&&a.target?'Eating hay':a.target?'Heading to hay':a.fullness<=HUNGRY_AT?'Hungry — looking for hay':'Wandering';
   }
   for(const bale of bales)bale.actor.dataset.visitors=String(herd.filter(a=>a.target===bale).length);
   if(time-lastUI>200){updatePanel();lastUI=time;}dragTick?.();requestAnimationFrame(frame);
  }
  requestAnimationFrame(frame);
- return {save,async flush(){if(held)release(true);if(saving)await new Promise(resolve=>saveWaiters.push(resolve));if(dirty&&!conflict)await save();return !dirty;}};
+ return {save,close:closePanel,setEnabled(enabled){control.disabled=!enabled||conflict;for(const node of [...layer.querySelectorAll('button'),...panel.querySelectorAll('input,select,button')])node.disabled=!enabled||conflict;},async flush(){if(held)release(true);if(saving)await new Promise(resolve=>saveWaiters.push(resolve));if(dirty&&!conflict)await save();return !dirty;}};
 }
