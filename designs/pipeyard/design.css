@@ -1,0 +1,74 @@
+/* Prototype only: compact faceless pipe columns and freely wandering animals. */
+.pipeyard-prototype{background:#25362c;color:#f2e9cb}
+.pipeyard-prototype .yard-header{background:#293e32;border-bottom-color:#aa2942;padding:12px 22px}
+.pipeyard-prototype .brand-mark{background:#354b38;border-color:#b7a578;color:#ead7a9}
+.pipeyard-prototype #demo-banner{background:#384a38;border-color:#81916b;padding:11px 22px;color:#e0e7c9}
+.pipeyard-prototype #demo-banner strong{color:#f3dcab}
+.pipeyard-prototype #demo-exit,.pipeyard-prototype #configure,.pipeyard-prototype #attach,.pipeyard-prototype #launch{display:none!important}
+.pipeyard-prototype .yard{background:#4a6448;padding:16px;display:flex;flex-direction:column}
+.pipeyard-prototype .yard-toolbar{flex:none}.pipeyard-prototype .yard-caption{color:#e2e5be;font-size:12px;line-height:1.5;margin:10px 0}
+.pipeyard-prototype .pasture{position:relative;isolation:isolate;flex:1;min-height:430px;background:#8b9f71;border:3px solid #354f38;box-shadow:inset 0 0 0 2px #c2c398;overflow-x:auto;overflow-y:hidden;scrollbar-color:#c6b382 #59734b}
+.pipeyard-prototype .pasture-scenery{position:absolute;inset:0;min-width:960px;overflow:hidden;pointer-events:none;z-index:-1;background:repeating-linear-gradient(0deg,transparent 0 31px,#c4cc8a30 31px 33px),repeating-linear-gradient(90deg,transparent 0 53px,#6c855735 53px 56px),linear-gradient(#acb88d 0 12%,#8fa477 12% 68%,#819b69 68%)}
+.pasture-scenery:before{content:'';position:absolute;inset:50px 9px 12px;border-left:6px double #d7c28b;border-right:6px double #d7c28b}
+.distant-hill{position:absolute;left:-5%;top:-55px;width:110%;height:130px;background:#6c865c;border-radius:50%;box-shadow:100px 15px 0 #839969}
+.fence{position:absolute;left:10px;right:10px;height:28px;background:repeating-linear-gradient(90deg,transparent 0 40px,#bda879 40px 46px,transparent 46px 72px),linear-gradient(transparent 0 6px,#d7c28b 6px 11px,transparent 11px 20px,#bca575 20px 25px,transparent 25px);filter:drop-shadow(0 3px 0 #445d3940)}
+.fence-back{top:52px;transform:skewY(-1deg)}.fence-front{bottom:10px}.pasture-sign{position:absolute;top:22px;right:22px;left:auto;background:#e0d3a5;border:2px solid #655c40;color:#4b573d;padding:4px 10px;font:12px Consolas,monospace;box-shadow:2px 3px 0 #526d4140}
+.cows{position:absolute;inset:0;pointer-events:none}.pasture-cow{position:absolute;top:0;left:0;width:52px;height:35px;pointer-events:none;will-change:transform}.pasture-cow svg{width:100%;height:100%;overflow:visible}.pasture-cow[data-facing=left] svg{transform:scaleX(-1)}.cow-2{width:46px}.cow-3{width:49px}.cow-head{transform-origin:62px 22px}.pasture-cow[data-grazing=true] .cow-head{animation:cow-graze 3s ease-in-out infinite}
+@keyframes cow-graze{0%,100%{transform:rotate(0)}50%{transform:rotate(12deg) translateY(2px)}}
+
+.pasture-chicken{position:absolute;top:0;left:0;width:29px;height:26px;pointer-events:none;will-change:transform}.pasture-chicken svg{width:100%;height:100%;overflow:visible}.pasture-chicken[data-facing=left] svg{transform:scaleX(-1)}.chicken-2 .chicken-body{filter:sepia(.35)}.chicken-4{width:25px;height:23px}.chicken-head{transform-origin:31px 21px}.pasture-chicken[data-grazing=true] .chicken-head{animation:chicken-peck .7s ease-in-out infinite}@keyframes chicken-peck{50%{transform:rotate(30deg) translateY(2px)}}
+.pipeyard-prototype .pasture:after{content:'';display:block;min-width:960px;min-height:430px;pointer-events:none}
+.pipeyard-prototype .pipe-grid,.pipeyard-prototype.demo-mode .pipe-grid,.pipeyard-prototype:has(#details:not([hidden])) .pipe-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));grid-template-rows:1fr;align-content:stretch;gap:0;width:70%;min-width:672px;min-height:0;border:0;box-shadow:none;background:none;padding:0 10px;position:absolute;top:0;bottom:0;left:0;z-index:1;align-items:stretch}
+.pipeline-row{position:relative;min-width:0;height:100%;border:0;transition:background .12s}
+.pipeline-row.dragging{background:#dce5b155;outline:1px dashed #3d5942}.pipeline-row.dragging .pipe-tile{opacity:.72}
+.reordering,.reordering *{cursor:grabbing!important;user-select:none!important}
+.pipeyard-prototype .pipe-tile,.pipeyard-prototype.demo-mode .pipe-tile{display:block;position:relative;min-width:0;width:100%;min-height:0;height:100%;padding:0;border:0;border-radius:0;background:none;box-shadow:none;text-align:center;overflow:visible;color:#f0edcd;touch-action:none}
+.pipeyard-prototype .pipe-tile:hover{transform:none;background:#d9dda12b}.pipeyard-prototype .pipe-tile.selected{outline:1px solid #fff1b8;outline-offset:-2px;background:#d9dda130}
+.pipeyard-prototype .pipe-tile .oil-pipeline,.pipeyard-prototype.demo-mode .pipe-tile .oil-pipeline{position:absolute;top:0;left:50%;transform:translateX(-50%);width:56px;height:100%;min-height:0;margin:0;color:var(--pipe);filter:drop-shadow(2px 0 0 #344c3228);pointer-events:none}
+.pipeyard-prototype .pipe-tile strong{position:absolute;top:45px;left:50%;transform:translateX(-50%);display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;writing-mode:horizontal-tb;white-space:normal;overflow:hidden;text-overflow:ellipsis;overflow-wrap:anywhere;width:calc(100% - 12px);height:auto;max-height:64px;padding:8px 5px;background:#e3d5aa;border:1px solid #766d4c;color:#304733;font:700 12px/15px Consolas,'Cascadia Mono',monospace;box-shadow:2px 2px 0 #48623d60}
+.pipeyard-prototype .pipe-tile .progress-label{position:absolute;bottom:48px;left:50%;transform:translateX(-50%);width:46px;max-height:36px;overflow:hidden;background:#304731f2;color:#e9e3bc;font-size:9px;line-height:12px;padding:3px 1px;margin:0;text-align:center;border:1px solid #b2ab7b}
+.pipeyard-prototype .pipe-tile .tile-top,.pipeyard-prototype .pipe-tile .status-line,.pipeyard-prototype .pipe-tile .run-message,.pipeyard-prototype .pipe-tile .meter,.pipeyard-prototype .pipe-tile .tracking-badge{display:none}
+.pipeyard-prototype .pipe-tile.needs-attention{border:0;box-shadow:none}.pipeyard-prototype .needs-attention:after{display:none}.pipeyard-prototype .needs-attention strong{background:#f1cf8b;border-color:#805324}
+.pipeyard-prototype .is-running .oil-flow{animation:oil-stream 3s linear infinite}@keyframes oil-stream{to{stroke-dashoffset:-30}}
+.pipeyard-prototype #pipeline-desk{width:clamp(300px,26vw,390px);background:#23382b;border-left:4px solid #baaa7c}.pipeyard-prototype .pipeline-desk-heading{background:#344d39;border-color:#a18e64}.pipeyard-prototype .yard-footer{color:#d9e1bd;border-color:#9aab7c}.pipeyard-prototype .yard-footer span:last-child{max-width:none}
+.reorder-status{font-size:12px;color:#f4e4b8;min-height:0}.reorder-status:not(:empty){margin:0 0 8px}
+@media(max-width:700px){.pipeyard-prototype .yard{display:block}.pipeyard-prototype #pipeline-desk{width:100%}.pipeyard-prototype #demo-banner{padding:10px 15px}}
+@media(prefers-reduced-motion:reduce){.pipeyard-prototype .cow-head,.pipeyard-prototype .chicken-head,.pipeyard-prototype .oil-flow{animation:none!important}.pipeline-row{transition:none}}
+.pipeyard-prototype.detail-mode .yard{display:none}.pipeyard-prototype.detail-mode #pipeline-desk{width:100%;border-left:0}
+
+/* Interaction lives above the scenery; empty space still reaches the pipes. */
+.animal-layer{position:absolute;inset:0;min-width:960px;z-index:2;pointer-events:none}
+.pipeyard-prototype .animal-layer button{position:absolute;top:0;left:0;pointer-events:auto;touch-action:none;cursor:grab;border:0;border-radius:3px;padding:0;background:transparent;box-shadow:none;min-height:40px;min-width:40px;user-select:none;line-height:0}
+.pipeyard-prototype .animal-layer button:hover{background:transparent;filter:drop-shadow(0 2px 2px #20362766)}
+.pipeyard-prototype .animal-layer .picked-up{cursor:grabbing;z-index:5;filter:drop-shadow(0 9px 3px #20362766)}
+.pipeyard-prototype .animal-layer button:focus-visible{outline:2px dashed #fff0b7;outline-offset:3px}
+.pipeyard-prototype .animal-layer .pasture-cow{width:56px;height:40px}
+.pipeyard-prototype .animal-layer .pasture-chicken{width:40px;height:40px}
+.pasture-chicken svg{width:29px;height:26px}
+.cow-4 .cow-body>path:first-child,.cow-4 .cow-head>path:first-child{fill:#b57950}.cow-4 .cow-body>path:nth-child(2){fill:#714a37}
+.cow-5 .cow-body>path:first-child,.cow-5 .cow-head>path:first-child{fill:#dfbd7a}.cow-5 .cow-body>path:nth-child(2){fill:#b68c4e}
+.pipeyard-prototype .animal-layer .hay-bale{width:72px;height:56px}.hay-bale svg{width:100%;height:100%}
+
+.pipeyard-prototype .pipe-alert{position:absolute;top:17px;left:50%;transform:translateX(-50%);max-width:calc(100% - 10px);padding:3px 6px;background:#f4d191;border:1px solid #76552b;color:#4a351b;font:700 11px/15px Consolas,monospace;white-space:nowrap;box-shadow:1px 2px 0 #48623d60}
+.pipeyard-prototype .animal-layer .pasture-sheep{width:42px;height:40px;will-change:transform}
+.pasture-sheep svg{width:38px;height:29px;overflow:visible}.pasture-sheep[data-facing=left] svg{transform:scaleX(-1)}
+.sheep-head{transform-origin:53px 23px}.pasture-sheep[data-grazing=true] .sheep-head{animation:sheep-graze 2.5s ease-in-out infinite}
+@keyframes sheep-graze{50%{transform:rotate(15deg) translateY(2px)}}
+@media(prefers-reduced-motion:reduce){.pipeyard-prototype .sheep-head{animation:none!important}}
+
+.grass-patches{position:absolute;inset:95px 20px 55px;pointer-events:none}.grass-tuft{position:absolute;width:22px;height:17px;color:#557949;opacity:.65}.grass-tuft svg{width:100%;height:100%}.grass-tuft:nth-child(3n){color:#b4bf7c;width:16px;height:13px}.grass-tuft:nth-child(5n){color:#668650;width:27px;height:20px}
+.sheep-2 svg{filter:sepia(.16)}.sheep-4 svg{filter:brightness(.92)}
+
+.pipeyard-prototype .reorder-status,.pipeyard-prototype .reorder-status:not(:empty){position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+
+.pipeyard-prototype .animal-layer button{z-index:2}.pipeyard-prototype .animal-layer .hay-bale{z-index:1}.pipeyard-prototype .animal-layer .picked-up{z-index:5}
+.pipeyard-prototype #pipeline-desk.viewing-creature #details,.pipeyard-prototype #pipeline-desk.viewing-creature #pipeline-feed{display:none!important}
+.creature-panel{padding:18px;overflow:auto;min-height:0;flex:1}.creature-panel[hidden]{display:none}.creature-panel h3{font-size:20px;margin:8px 0}.creature-panel meter{display:block;width:100%;height:24px;accent-color:#b8cc7b}.creature-panel form{margin:18px 0}.creature-panel form button{margin-top:12px}.animal-portrait{width:140px;height:110px;margin:0 auto}.animal-portrait svg{width:100%;height:100%;transform:none!important}.creature-save-status{font-size:11px;color:#e3d5aa;max-width:220px}.fullness-value{margin:5px 0;font-size:13px}
+
+.pipeyard-prototype .animal-layer .hay-bale.picked-up{z-index:1}
+.colored-animal .cow-body>path:first-child,.colored-animal .cow-head>path:first-child,.colored-animal .chicken-body>path:first-child,.colored-animal .chicken-head>path:first-child,.colored-animal .sheep-wool,.colored-animal .sheep-head>path:nth-of-type(2){fill:var(--animal-coat)}
+.colored-animal .cow-body>path:nth-child(2),.colored-animal .chicken-body>path:nth-child(2){fill:var(--animal-shade)}
+.colored-animal .sheep-wool{stroke:var(--animal-shade)}
+.creature-panel>label[for=animal-color]{display:block;margin-top:16px}.creature-panel>select{width:100%;margin-top:6px}
+
+.animal-portrait{position:relative;top:auto;left:auto;pointer-events:none}

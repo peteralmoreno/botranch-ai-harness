@@ -1,0 +1,134 @@
+// Release inputs are explicit: runtime data and incidental local files cannot enter a release.
+const fs = require('node:fs');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
+const root = path.resolve(__dirname, '..');
+const projects = {
+  ranch: { source: 'omp-bot', name: 'bot-ranch' },
+  desk: { source: 'ranch-desk', name: 'ranch-desk' },
+};
+const common = ['manifest.json', 'translation.json', 'index.html', 'resources/icon.svg'];
+const widgetFiles = {
+  ranch: [...common, 'app.js', 'sprites.js', 'world.js', 'appearance.js', 'widget.css'],
+  desk: [...common, 'app.js', 'appearance.js', 'widget.css'],
+};
+const ranchFiles = [
+  'README.md', 'sounds/completion.wav', 'bridge.mjs', 'config.mjs', 'extension.mjs', 'focus.mjs', 'manager.mjs', 'pipeline.mjs', 'pipeline-manager.mjs', 'creature-store.cjs', 'pipeyard.mjs', 'pipeyard-adapter.mjs', 'pipeyard-api.mjs', 'pipeyard-catalog.mjs', 'updates.mjs', 'runtime-policy.mjs', 'bot-library.mjs', 'queue-policy.mjs', 'pickup-policy.mjs', 'work-check.mjs', 'task-context.mjs', 'runtime-delivery.mjs', 'activity-feed.mjs', 'terminal-runner.mjs',
+  'pm-skill.mjs', 'skills/bot-ranch-pm/SKILL.md', 'agent-api.mjs', 'agent-catalog.json', 'board-changes.mjs', 'ranch-cli.mjs', 'botRanch-cli.cmd', 'companion-health.mjs', 'companion-lock.mjs', 'lifecycle-log.mjs',
+  'companion-start.mjs', 'install.mjs', 'Install-Shortcut.ps1', 'Install botRanch.cmd', 'Open botRanch.cmd', 'metadata.mjs', 'native.mjs', 'open-desktop.mjs', 'open-setup.mjs', 'preview.mjs', 'server.mjs', 'state.mjs',
+  'Focus-Terminal.ps1', 'Terminal-Control.ps1', 'Start-Bot-Ranch.ps1', 'native/Terminal-Control.cs',
+  'Launch-Companion.cmd', 'Open Bot Ranch Setup.cmd', 'Start-Bot-Ranch.cmd', 'Start-OMP.cmd',
+  'launch-companion.sh', 'open-setup.sh', 'ranch-terminal.sh', 'start-bot-ranch.sh', 'start-omp.sh',
+  'setup/bot-palette.mjs','setup/pipeyard-ranch.mjs','setup/pipeyard-ranch.css','setup/yard-creatures.mjs','setup/yard-creature-behavior.mjs', 'setup/pipeyard-feed.mjs', 'setup/pipeyard-demo.mjs', 'setup/pipeyard.html', 'setup/pipeyard.js', 'setup/pipeyard.css', 'setup/index.html', 'setup/app.js', 'setup/style.css', 'setup/settings.css', 'setup/board.html', 'setup/board.js', 'setup/board.css',
+];
+const releaseDocs = ['LICENSE', 'CHANGELOG.md', 'SECURITY.md', 'THIRD-PARTY-NOTICES.md'];
+const ranchGuides = ['testing-and-troubleshooting.md', 'build-and-import.md', 'pipeyard-agent-connections.md', 'bot-ranch-pipeyard.md', 'bot-ranch-loop.md', 'bot-ranch-pipeline.md', 'bot-ranch-desktop.md', 'bot-ranch-install.md', 'bot-ranch-ai-sync.md', 'bot-ranch-api.md'];
+function copyFiles(source, destination, files) {
+  for (const file of files) {
+    const input = path.join(source, file);
+    if (!fs.lstatSync(input).isFile()) throw new Error(`Release input must be a regular file: ${input}`);
+    const output = path.join(destination, file);
+    fs.mkdirSync(path.dirname(output), { recursive: true });
+    fs.copyFileSync(input, output);
+  }
+}
+function stageRanch(sources, destination, {desktop = false, runtime = true} = {}) {
+  copyFiles(path.join(sources, 'omp-bot-companion'), destination, ranchFiles);
+  copyFiles(root, destination, releaseDocs);
+  const nativeFiles = require('./build-native.cjs').buildNative(path.join(destination), destination);
+  copyFiles(path.join(root, 'docs/guides'), path.join(destination, 'guides'), ranchGuides);
+  const readme = path.join(destination, 'README.md');
+  fs.writeFileSync(readme, fs.readFileSync(readme, 'utf8').replaceAll('../../docs/guides/', 'guides/'));
+  copyFiles(path.join(sources, 'omp-bot'), path.join(destination, 'ui'), widgetFiles.ranch);
+  copyFiles(path.join(sources, 'ranch-desk'), path.join(destination, 'desk'), widgetFiles.desk);
+  const version = JSON.parse(fs.readFileSync(path.join(sources, 'omp-bot', 'manifest.json'), 'utf8')).version;
+  const desktopFiles = desktop ? require('./build-desktop.cjs').stageDesktop(sources, path.join(destination, 'desktop'), {runtime}) : [];
+  fs.writeFileSync(path.join(destination, 'release.json'), JSON.stringify({version, files:[...ranchFiles,...releaseDocs,...nativeFiles,...ranchGuides.map(f=>'guides/'+f),...widgetFiles.ranch.map(f=>'ui/'+f),...widgetFiles.desk.map(f=>'desk/'+f),...desktopFiles]},null,2));
+}
+function addRanchBundleFiles(companion, widget, version) {
+  const {createHash}=require('node:crypto');
+  const widgetName=`iCUE/bot-ranch-${version}.icuewidget`;
+  fs.mkdirSync(path.join(companion,'iCUE'),{recursive:true});
+  fs.copyFileSync(widget,path.join(companion,widgetName));
+  fs.writeFileSync(path.join(companion,'START-HERE.txt'),`botRanch ${version} - Windows complete download
+
+1. Extract this entire ZIP to a writable folder.
+2. Run Install botRanch.cmd.
+3. Open botRanch from the Start menu.
+4. For iCUE, import ${widgetName}. Otherwise choose Ranch display > Desktop app.
+
+Finish active bot work before updating the companion. Quit desktop app from the tray before reopening an update.
+Node.js 22.12+ is required. Managed bots also need Git Bash, Bun, OMP and provider access.
+Full instructions: guides/bot-ranch-install.md
+Agent/API docs: guides/bot-ranch-ai-sync.md and guides/bot-ranch-api.md
+Checksums: SHA256SUMS.txt
+`);
+  const manifestPath=path.join(companion,'release.json'),manifest=JSON.parse(fs.readFileSync(manifestPath,'utf8'));
+  if(manifest.version!==version)throw Error('Bundle and companion versions must match.');
+  manifest.files=[...new Set([...manifest.files,widgetName,'START-HERE.txt'])];
+  fs.writeFileSync(manifestPath,JSON.stringify(manifest,null,2));
+  const sums=[...manifest.files,'release.json'].sort().map(file=>createHash('sha256').update(fs.readFileSync(path.join(companion,file))).digest('hex')+'  '+file);
+  fs.writeFileSync(path.join(companion,'SHA256SUMS.txt'),sums.join('\n')+'\n');
+}
+function run(command, args) {
+  const result = spawnSync(command, args, { cwd: root, stdio: 'inherit', windowsHide: true });
+  if (result.error) throw result.error;
+  if (result.status !== 0) throw new Error(`${command} failed (${result.status})`);
+}
+function archive(directory, destination) {
+  const helper=require('./build-native.cjs').buildZip(path.join(path.dirname(directory),'ZipRelease.exe'));
+  run('powershell.exe', ['-NoProfile', '-NonInteractive', '-File', path.join(__dirname, 'zip-release.ps1'), '-Source', directory, '-Destination', destination, '-Helper', helper]);
+}
+function build(target = 'ranch', mode = 'build') {
+  if (process.platform !== 'win32') throw new Error('Release builds require Windows (PowerShell and the Windows .NET target).');
+  const selected = target === 'all' ? Object.keys(projects) : target === 'ranch' && mode === 'build' ? ['ranch', 'desk'] : [target];
+  if (selected.some(key => !projects[key]) || !['build', 'widget', 'companion', 'validate'].includes(mode)) throw new Error('Usage: node tools/build.cjs [all|ranch|desk] [build|widget|companion|validate]');
+  const sources = path.join(root, 'sources');
+  const generated = path.join(root, 'artifacts');
+  fs.mkdirSync(generated, { recursive: true });
+  const staging = fs.mkdtempSync(path.join(generated, '.build-'));
+  const cli = path.join(root, 'node_modules/icuewidget-cli/node-bin/icuewidget.js');
+  try {
+    for (const key of selected) {
+      const project = projects[key];
+      const version = JSON.parse(fs.readFileSync(path.join(sources, project.source, 'manifest.json'), 'utf8')).version;
+      if (!/^\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?$/.test(version)) throw new Error(`Invalid release version: ${version}`);
+      const release = path.join(generated, 'releases', project.name);
+      fs.mkdirSync(release, { recursive: true });
+      if (mode !== 'companion') {
+        const widget = path.join(staging, project.name);
+        copyFiles(path.join(sources, project.source), widget, widgetFiles[key]);
+        run(process.execPath, [cli, 'validate', widget]);
+        if (mode !== 'validate') {
+          const filename = `${project.name}-${version}.icuewidget`;
+          run(process.execPath, [cli, 'package', widget, '--output', path.join(staging, filename)]);
+          fs.copyFileSync(path.join(staging, filename), path.join(release, filename));
+        }
+      }
+      if ((mode === 'build' || mode === 'companion') && key === 'ranch') {
+        const name = `${project.name}-companion-${version}`;
+        const companion = path.join(staging, name);
+        stageRanch(sources, companion, {desktop:true});
+        archive(companion, path.join(staging, name + '.zip'));
+        fs.copyFileSync(path.join(staging, name + '.zip'), path.join(release, name + '.zip'));
+        if(key==='ranch'&&mode==='build'){
+          addRanchBundleFiles(companion,path.join(staging,`${project.name}-${version}.icuewidget`),version);
+          const bundle=`${project.name}-${version}.zip`;
+          archive(companion,path.join(staging,bundle));
+          fs.copyFileSync(path.join(staging,bundle),path.join(release,bundle));
+        }
+
+      }
+      console.log(`${project.name} ${version}: ${release}`);
+    }
+  } finally {
+    // Only remove the unique staging directory created by this invocation.
+    if (path.dirname(staging) !== generated || !path.basename(staging).startsWith('.build-')) throw new Error('Invalid cleanup path');
+    fs.rmSync(staging, { recursive: true, force: true });
+  }
+}
+module.exports = { build, stageRanch, addRanchBundleFiles, widgetFiles, projects };
+if (require.main === module) {
+  try { build(process.argv[2], process.argv[3]); }
+  catch (error) { console.error(error.message); process.exitCode = 1; }
+}

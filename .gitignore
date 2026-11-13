@@ -1,0 +1,38 @@
+# Dependencies, build outputs and historical local releases
+node_modules/
+artifacts/
+.artifact-archive/
+test-results/
+playwright-report/
+.superpowers/
+.scratch/
+**/bin/
+**/obj/
+*.log
+*.tmp
+# Credentials, local configuration and conversation history
+.env
+.env.*
+!.env.example
+**/pairing-key.txt
+**/admin-key.txt
+**/ranch.json
+**/ranch.json.*
+**/sessions/
+**/terminals/
+**/bot-home/
+**/handovers/
+*.user
+.vs/
+.DS_Store
+Thumbs.db
+
+**/ranch-updates.json
+/pipeyard/
+
+# Local notes and source exports
+/HANDOFF*
+/handoff*
+/handover*
+*.zip
+/docs/superpowers/

@@ -1,0 +1,28 @@
+# Install and update
+
+## Requirements
+
+Windows and Node.js 22.12+. Managed bot sessions additionally require Git for Windows/Git Bash, Bun, compatible Oh My Pi (OMP), and configured model-provider access. iCUE is optional for desktop mode.
+
+## Install
+
+1. Extract the **entire** complete release ZIP to a writable folder.
+2. Run **Install botRanch.cmd**.
+3. Open **botRanch** from Start. No startup script is needed for everyday use.
+4. In Settings, select a bot home. This is the shared coordination folder; individual tasks can work in other project folders.
+5. Use Factory to create profiles and choose roles, appearances, and colors. Bring profiles from the Bank onto the Ranch and open their sessions from Bots.
+
+The app installs under `%LOCALAPPDATA%\Programs\botRanch`. Companion state and credentials stay under `%LOCALAPPDATA%\OmpBot`; portable task/role records use the configured bot home.
+
+## Ranch display
+
+- **Desktop:** choose the Ranch app from the dock.
+- **iCUE:** import the matching `iCUE/bot-ranch-<version>.icuewidget`, select Large or XL, allow `127.0.0.1:43822` in Widget Access, and pair using Settings' connection key.
+
+The companion normally listens on `http://127.0.0.1:43822`. Keep it local. Do not share the connection key.
+
+## Update
+
+Finish active work, install the new complete ZIP, quit the desktop app from its tray menu, and reopen botRanch. Closing a window only hides it. The installer preserves profiles, tasks, keys, and bot-home settings. Import the matching widget when using iCUE.
+
+For a source build, see [development](build-and-import.md). For startup or permission failures, see [troubleshooting](testing-and-troubleshooting.md).

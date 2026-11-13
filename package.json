@@ -1,0 +1,44 @@
+{
+  "name": "botranch-ai-harness",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "postinstall": "node node_modules/electron/install.js",
+    "build": "node tools/build.cjs ranch",
+    "build:ranch": "node tools/build.cjs ranch",
+    "build:companion": "node tools/build.cjs ranch companion",
+    "build:ranch-companion": "node tools/build.cjs ranch companion",
+    "build:desk": "node tools/build.cjs desk",
+    "validate": "node tools/build.cjs ranch validate",
+    "validate:all": "node tools/build.cjs all validate",
+    "validate:omp": "node tools/build.cjs ranch validate",
+    "package": "node tools/build.cjs ranch widget",
+    "package:omp": "node tools/build.cjs ranch widget",
+    "preview": "node tools/preview.cjs",
+    "start:omp-bridge": "node sources/omp-bot-companion/bridge.mjs",
+    "test": "node --test --test-concurrency=1 tests/*.test.cjs && npm run test:ranch-native && playwright test",
+    "test:unit": "node --test --test-concurrency=1 tests/*.test.cjs",
+    "test:browser": "playwright test",
+    "test:build": "node --test tests/build.test.cjs",
+    "test:ranch-native": "node --test sources/omp-bot-companion/tests/setup-colors.test.mjs && powershell.exe -NoProfile -NonInteractive -File sources/omp-bot-companion/tests/terminal-arguments.test.ps1"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "electron": "^44.7.0",
+    "esbuild": "^0.28.2",
+    "icuewidget-cli": "0.4.48"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "dependencies": {
+    "lucide-react": "^1.56.0",
+    "motion": "^14.2.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "description": "Bot Ranch for XENEON EDGE, with a Windows companion and local bot task board.",
+  "license": "MIT"
+}

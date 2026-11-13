@@ -1,0 +1,3 @@
+// Shared named colors for bot profiles and pipeline appearance.
+export const botColors=['#e58d77','#68bbc3','#ddb55c','#a396ca','#e78fb3','#e8a05b','#a8c966','#65b58e','#729edb','#8585d5','#bbc5cb','#cf7070','#e4dcad','#66d9ce','#d976ed','#a78362','#ff2d2d','#ff4dd8','#2ec4ff','#7cff3f','#ff6b00','#ffd400','#00e676','#00b8a9','#0a7dff','#5e35ff','#9b30ff','#ff0088','#ff4f6d','#b388ff','#ffffff','#151515'];
+export const colorNames=['Coral','Cyan','Gold','Violet','Rose','Orange','Lime','Emerald','Blue','Indigo','Silver','Red','Cream','Mint','Orchid','Copper','Hot Red','Magenta','Sky','Neon','Tangerine','Sun','Spring','Teal','Azure','Royal','Grape','Fuchsia','Watermelon','Lavender','Pearl','Jet'];
