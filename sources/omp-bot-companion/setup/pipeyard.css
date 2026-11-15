@@ -39,3 +39,17 @@ body:not(.pipeyard-ranch) .pipe-art{display:none}body:not(.pipeyard-ranch) .pipe
 .pipe-color-palette button[aria-pressed=true]{outline:2px solid #fff;outline-offset:2px;border-color:#121216}
 .pipe-color-palette button:focus-visible{outline:3px dashed #fff;outline-offset:3px}
 .pipe-color-palette button:disabled{cursor:default;opacity:.5}
+
+.yard-manager-portrait{display:block;width:94px;height:94px}.yard-manager-portrait svg{width:100%;height:100%;image-rendering:pixelated}
+.yard-manager-actors{position:absolute;inset:0;z-index:2;pointer-events:none}
+.yard-manager-actor{position:absolute;left:0;top:0;border:0;background:transparent!important;display:flex;align-items:center;flex-direction:column;padding:0;pointer-events:auto;width:104px;max-width:calc(100% - 24px);min-width:0;color:#263f31}
+.yard-manager-actor .yard-manager-portrait{width:84px;height:84px;filter:drop-shadow(2px 3px 0 #21382a40)}.yard-manager-actor>span:not(.yard-manager-portrait){background:#eddfb2;padding:2px 8px;border:1px solid #68764f;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.yard-manager-actor>small{background:#304d39;color:#f1e3bd;padding:2px 6px;font-size:10px;text-transform:capitalize}.yard-manager-actor:focus-visible{outline:3px solid #fff1b8;outline-offset:4px}.yard-manager-dialog{max-width:430px}.yard-manager-dialog .yard-manager-portrait{margin:4px auto}.manager-update,.manager-report{white-space:pre-wrap;overflow-wrap:anywhere;padding:10px;border-left:3px solid #bba476;background:#ffffff08}
+
+.yard-manager-actor[data-facing=left] .yard-manager-portrait>svg{transform:scaleX(-1)}
+.yard-manager-actor[data-walking=true] .robot{animation:yard-manager-step .45s steps(2,end) infinite}
+@keyframes yard-manager-step{50%{translate:0 -2px}}
+@media(prefers-reduced-motion:reduce){.yard-manager-actor .robot{animation:none!important}}
+.yard-manager-actor{cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none}
+.yard-manager-actor[data-held=true]{cursor:grabbing;z-index:6}
+.yard-manager-actor[data-held=true] .yard-manager-portrait{translate:0 -7px;filter:drop-shadow(0 10px 3px #20362766)}
+.yard-manager-actors:has(.yard-manager-actor[data-held=true]){z-index:6}

@@ -8,7 +8,7 @@ test('tap selects and double tap stays playful; terminal opens only from its but
  const bot=page.locator('.bot');await expect(bot).toHaveAttribute('data-color','indigo');await expect(bot.locator('.label')).toHaveText('3 Indigo');
  await bot.click();await expect.poll(()=>selected).toBe('ranch-one');await page.waitForTimeout(550);expect(focus).toBe(0);await expect(page.locator('dialog[open],#peek:not([hidden])')).toHaveCount(0);
  await bot.dblclick();await page.waitForTimeout(550);expect(focus).toBe(0);
- await page.getByRole('button',{name:'Open selected terminal'}).click();await expect.poll(()=>focus).toBe(1);
+ await page.getByRole('button',{name:'Open session',exact:true}).click();await expect.poll(()=>focus).toBe(1);
  sessions[0].color=11;await expect(bot).toHaveAttribute('data-color','red');await expect(bot.locator('.label')).toHaveText('3 Indigo');
  sessions[0].state='offline';await expect(bot).toHaveAttribute('data-mode','offline');await page.waitForTimeout(550);await bot.dblclick();expect(focus).toBe(1);
 });

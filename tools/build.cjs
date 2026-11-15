@@ -13,7 +13,7 @@ const widgetFiles = {
   desk: [...common, 'app.js', 'appearance.js', 'widget.css'],
 };
 const ranchFiles = [
-  'README.md', 'sounds/completion.wav', 'bridge.mjs', 'config.mjs', 'extension.mjs', 'focus.mjs', 'manager.mjs', 'pipeline.mjs', 'pipeline-manager.mjs', 'creature-store.cjs', 'pipeyard.mjs', 'pipeyard-adapter.mjs', 'pipeyard-api.mjs', 'pipeyard-catalog.mjs', 'updates.mjs', 'runtime-policy.mjs', 'bot-library.mjs', 'queue-policy.mjs', 'pickup-policy.mjs', 'work-check.mjs', 'task-context.mjs', 'runtime-delivery.mjs', 'activity-feed.mjs', 'terminal-runner.mjs',
+  'README.md', 'sounds/completion.wav', 'bridge.mjs', 'config.mjs', 'extension.mjs', 'focus.mjs', 'manager.mjs', 'pipeline.mjs', 'pipeline-manager.mjs', 'creature-store.cjs', 'pipeyard.mjs', 'pipeyard-adapter.mjs', 'pipeyard-api.mjs', 'pipeyard-managers.mjs', 'pipeyard-catalog.mjs', 'updates.mjs', 'runtime-policy.mjs', 'bot-library.mjs', 'bot-placement.mjs', 'queue-policy.mjs', 'pickup-policy.mjs', 'work-check.mjs', 'task-context.mjs', 'runtime-delivery.mjs', 'activity-feed.mjs', 'terminal-runner.mjs',
   'pm-skill.mjs', 'skills/bot-ranch-pm/SKILL.md', 'agent-api.mjs', 'agent-catalog.json', 'board-changes.mjs', 'ranch-cli.mjs', 'botRanch-cli.cmd', 'companion-health.mjs', 'companion-lock.mjs', 'lifecycle-log.mjs',
   'companion-start.mjs', 'install.mjs', 'Install-Shortcut.ps1', 'Install botRanch.cmd', 'Open botRanch.cmd', 'metadata.mjs', 'native.mjs', 'open-desktop.mjs', 'open-setup.mjs', 'preview.mjs', 'server.mjs', 'state.mjs',
   'Focus-Terminal.ps1', 'Terminal-Control.ps1', 'Start-Bot-Ranch.ps1', 'native/Terminal-Control.cs',

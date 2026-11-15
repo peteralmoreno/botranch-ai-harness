@@ -1,3 +1,4 @@
+import {PipeyardManagers} from './pipeyard-managers.mjs';
 import path from 'node:path';
 import fs from 'node:fs';
 import {Pipeyard} from './pipeyard.mjs';
@@ -9,6 +10,7 @@ function boardRuns(manager){return manager.tasks.filter(t=>t.pipeline&&t.pipelin
 });}
 export function createPipeyardApi(manager){
  let service;
+ const stewards=new PipeyardManagers(manager);
  const yard=()=>{const root=path.join(manager.library.root,'pipeyard');if(!service||service.root!==root){if(service?.busy)throw Error('Pipeyard is busy; wait before changing home.');service=new Pipeyard({root,now:manager.now});}return service;};
  return {
   get busy(){return service?.busy||false;},
@@ -18,12 +20,17 @@ export function createPipeyardApi(manager){
    try{
     if(!ai&&['creatures','ranch-creatures'].includes(route)&&['GET','POST'].includes(method)){const scope=manager.library.root;if(method==='POST'&&body?.scope!==scope)return {status:409,body:{error:'Bot home changed. Reload the yard before saving animals.'}};const store=creatureStore.createCreatureStore(path.join(scope,route==='ranch-creatures'?'ranch':'pipeyard','creatures.json'),{empty:route==='ranch-creatures'});return {status:200,body:{...(method==='GET'?store.read():store.save(body)),scope}};}
     if(method==='GET'&&route==='catalog')return {status:200,body:pipeyardCatalog};
-    if(method==='GET'&&route==='snapshot'){const snapshot=yard().snapshot();return {status:200,body:{...snapshot,runs:[...snapshot.runs,...boardRuns(manager).map(r=>({...r,shape:'standard',...yard().boardAppearances[r.id]}))]}};}
+    if(method==='GET'&&route==='snapshot'){const snapshot=yard().snapshot();return {status:200,body:{...snapshot,...stewards.snapshot([...snapshot.runs,...boardRuns(manager).map(r=>({...r,shape:'standard',...yard().boardAppearances[r.id]}))])}};}
     if(!ai&&method==='GET'&&route==='config')return {status:200,body:yard().configuration()};
     if(!ai&&method==='POST'&&route==='config')return {status:200,body:body?.reload===true?yard().reload():yard().configure(body)};
     if(method==='POST'&&route==='action'){
      const {action,...input}=body||{};
+     if(ai&&['create-manager','start-manager'].includes(action))return {status:403,body:{error:'Create managers through the Pipeyard controls or Factory.'}};
      if(ai){const mode=manager.aiState?.access;if(mode!=='operate'&&!(mode==='organize'&&pipeyardCatalog.permissions.organize.includes(action)))return {status:403,body:{error:'This action requires '+(pipeyardCatalog.permissions.organize.includes(action)?'Organize':'Operate')+' access in AI Sync.'}};}
+     if(action==='start-manager'){const p=stewards.profiles().find(p=>p.id===input.managerId);if(!p)throw Error('Choose an active Pipeyard manager.');return {status:200,body:await manager.action(p.id,'resume')};}
+     if(action==='create-manager')return {status:200,body:stewards.create(input)};
+     if(['handoff','check-yard'].includes(action))return {status:200,body:stewards.handoff(input,yard().snapshot().runs,action==='check-yard')};
+     if(action==='delete'&&manager.tasks.some(t=>t.pipeyardRunId===input.id&&((!t.archived&&t.status!=='done')||manager.taskLocks.has(t.id)||t.attempts?.some(a=>['dispatching','awaiting-runtime','claimed','running','unresolved'].includes(a.state)))))throw Error('Finish or archive the unfinished manager review before deleting this pipeline.');
      if(action==='set-appearance'&&String(input.id).startsWith('board-')){const run=boardRuns(manager).find(r=>r.id===input.id);if(!run)throw Error('Unknown Board pipeline.');return {status:200,body:{...run,...yard().setBoardAppearance(input)}};}
      if(input.taskId&&!manager.tasks.some(t=>t.id===input.taskId))throw Error('Unknown linked Board task.');
      return {status:200,body:await yard().execute(action,input)};

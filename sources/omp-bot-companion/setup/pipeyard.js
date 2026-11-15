@@ -32,7 +32,58 @@ function button(label,fn){const n=el('button',label);n.type='button';n.onclick=f
 function message(value){$('notice').textContent=value;}
 function color(run){return /^#[a-f0-9]{6}$/i.test(run.color)?run.color:'#61b7ba';}
 async function api(route,body){if(demoMode)throw Error('Live API calls are disabled in demo mode.');const response=await fetch((paired?'/control/pipeyard/':'/admin/pipeyard/')+route,{method:body===undefined?'GET':'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})});let result;try{result=await response.json();}catch{throw Error('Companion returned an invalid response.');}if(!response.ok)throw Error(result.error||'Request failed.');return result;}
-async function action(action,body={}){if(!demoMode&&(['start-demo','create-demo','delete-demo'].includes(action)||String(body.id||'').startsWith('demo-')))throw Error('Demo actions cannot operate the live yard.');if(busy)throw Error('Another action is still in progress.');busy=true;if(['refresh','check-due'].includes(action)){checkingId=body.id;renderDetails();}try{const result=demoMode?demo.execute(action,body):await api('action',{action,...body});await refresh();return result;}catch(error){await refresh();throw error;}finally{busy=false;checkingId='';renderDetails();}}
+async function action(action,body={}){if(!demoMode&&(['start-demo','create-demo','delete-demo'].includes(action)||String(body.id||'').startsWith('demo-')))throw Error('Demo actions cannot operate the live yard.');if(busy)throw Error('Another action is still in progress.');busy=true;if(['refresh','check-due'].includes(action)){checkingId=body.id;renderDetails();}try{const result=demoMode?demo.execute(action,body):await api('action',{action,...body});await refresh();return result;}catch(error){await refresh();throw error;}finally{busy=false;checkingId='';renderDetails();renderManagers();}}
+// Pipeline managers use normal managed AI sessions; this view only requests explicit work.
+let managerActors=null,managerStep=null,managerDrag=null,managerFrame=0,managerLastFrame=0;
+const managerWalkers=new Map(),managerReducedMotion=matchMedia('(prefers-reduced-motion: reduce)');
+function managerPortrait(manager){const holder=el('span',undefined,'yard-manager-portrait');if(window.RanchSprites)holder.innerHTML=window.RanchSprites.svg(manager.color,manager.state==='thinking'?'working':manager.state,manager.design||'farmer');return holder;}
+async function managerAction(name,body={}){try{const result=await action(name,body);message(result.message||'Manager updated.');return result;}catch(error){message(error.message);}}
+async function openBotSession(id){
+ if(!online||busy)return;busy=true;
+ try{const response=await fetch((paired?'/control/':'/admin/')+'profile/session',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({id}),signal:AbortSignal.timeout(45000)}),result=await response.json();if(!response.ok)throw Error(result.error||'Could not open this session.');message(result.result==='started'?'Session opened.':result.result==='focused'?'Session brought forward.':result.result==='attention'?'Select the session on your taskbar.':'Session requested.');await refresh();}catch(error){message(error.message);}finally{busy=false;}
+}
+function openManager(id){
+ const manager=(snapshot.bots||snapshot.managers||[]).find(p=>p.id===id);if(!manager)return;const isManager=!manager.role||manager.role==='pipeyard-manager';
+ const dialog=el('dialog',undefined,'yard-manager-dialog'),head=el('div',undefined,'detail-head');head.append(el('h2',manager.nickname),button('Close',()=>dialog.close()));dialog.append(head,managerPortrait(manager),el('p',(manager.roleName||'Pipeline Manager')+' · '+(manager.state==='offline'?'Offline':manager.label)),el('p',manager.taskCount+' queued or active tasks.'));
+ if(manager.latestUpdate)dialog.append(el('p',manager.latestUpdate,'manager-update'));
+ if(isManager)dialog.append(el('p','Reviews handed-off pipes, records results and estimates progress when the platform supplies none. Scheduled API polling continues independently.','hint'));
+ if(snapshot.pickupPaused)dialog.append(el('p','Pickup paused · queued reviews wait.','hint'));if(isManager&&snapshot.managerAccess!=='operate')dialog.append(el('p','AI Sync must allow Operate for checks and notes.','hint'));
+ const actions=el('div',undefined,'detail-actions');actions.append(button('Open session',()=>{dialog.close();void openBotSession(id);}));if(isManager)actions.append(button('Check assigned pipes',()=>{dialog.close();void managerAction('check-yard',{managerId:id});}));for(const b of actions.children)b.disabled=!online||busy;dialog.append(actions,el('p','Rename, edit, or return this bot to the Bank from Bots / Factory.','hint'));dialog.addEventListener('close',()=>dialog.remove(),{once:true});document.body.append(dialog);dialog.showModal();
+}
+function deleteHistoryDialog(run){
+ const dialog=el('dialog'),title=el('h2','Delete from History?'),error=el('p',undefined,'error'),remove=button('Delete permanently',async()=>{remove.disabled=true;try{await action(demoMode?'delete-demo':'delete',{id:run.id,...(demoMode?{}:{confirmed:true,expectedUpdatedAt:run.updatedAt})});selected='';updateFragment();renderYard();renderDetails();dialog.close();message('Deleted from local History. External work was not changed.');}catch(e){error.textContent=e.message;remove.disabled=false;}});
+ dialog.setAttribute('aria-label','Delete from History');dialog.append(title,el('p','Delete '+run.title+' and its saved local notes and results? This cannot be undone. External pipelines and Board task history are unchanged.'),error,button('Cancel',()=>dialog.close()),remove);dialog.addEventListener('close',()=>dialog.remove(),{once:true});document.body.append(dialog);dialog.showModal();
+}
+function managerAnimation(at){
+ managerFrame=0;const dt=managerLastFrame?(at-managerLastFrame)/1000:0;managerLastFrame=at;
+ const pasture=document.querySelector('.pasture'),hidden=document.hidden||!pasture||demoMode;
+ for(const record of managerWalkers.values()){
+  const {actor,pose,profile}=record;if((hidden||!online)&&pose.held)record.cancelDrag?.();pose.paused=pose.held||hidden||!online||managerReducedMotion.matches||['offline','waiting','error'].includes(profile.state)||!!document.querySelector('dialog[open]')||actor.matches(':hover,:focus-visible,:active');
+  managerStep?.(pose,{width:pasture?.clientWidth||0,height:pasture?.clientHeight||0,actorWidth:actor.offsetWidth,actorHeight:actor.offsetHeight},dt);
+  actor.style.transform=`translate(${pose.x}px,${pose.y}px)`;actor.dataset.walking=String(pose.walking&&!pose.paused);actor.dataset.facing=pose.facing||'right';
+ }
+ if(managerWalkers.size)managerFrame=requestAnimationFrame(managerAnimation);
+}
+function renderManagers(){
+ const pasture=document.querySelector('.pasture');if(!visualYard||!pasture)return;
+ if(!managerActors){managerActors=el('div',undefined,'yard-manager-actors');pasture.append(managerActors);}
+ const managers=demoMode?[]:(snapshot.bots||snapshot.managers||[]),ids=new Set(managers.map(p=>p.id));
+ for(const [id,record]of managerWalkers)if(!ids.has(id)){record.cancelDrag?.();record.actor.remove();managerWalkers.delete(id);}
+ managers.forEach((p,i)=>{
+  let record=managerWalkers.get(p.id);if(!record){const actor=button('',()=>openManager(p.id));actor.className='yard-manager-actor';actor.title='Click for details; drag or use arrow keys to move. Moving never interrupts work.';record={actor,pose:{x:pasture.clientWidth*.76,y:pasture.clientHeight*(.28+i*.28),wait:.7+i*.4},signature:'',profile:p};managerWalkers.set(p.id,record);managerActors.append(actor);record.cancelDrag=managerDrag?.({actor,pose:record.pose,pasture,onSelect:()=>openManager(p.id),isEnabled:()=>online&&!demoMode});}
+  record.profile=p;const signature=JSON.stringify([p.nickname,p.color,p.design,p.state,p.role,p.roleName]);
+  if(record.signature!==signature){record.signature=signature;record.actor.replaceChildren(managerPortrait(p),el('span',p.nickname),el('small',p.state==='thinking'?'Working':p.state==='offline'?'Offline':p.state));record.actor.setAttribute('aria-label',p.nickname+', '+(p.roleName||'Pipeline Manager')+', '+p.state);}
+  record.actor.disabled=!online;
+ });
+ if(managerWalkers.size&&!managerFrame){managerLastFrame=0;managerAnimation(performance.now());}
+ if(!managerWalkers.size&&managerFrame){cancelAnimationFrame(managerFrame);managerFrame=0;managerLastFrame=0;}
+}
+function handoffDialog(run){
+ const dialog=el('dialog'),form=el('form'),title=el('h2','Hand off to Pipeline Manager'),label=el('label','Manager'),choice=el('select'),briefLabel=el('label','Handoff brief'),brief=el('textarea'),error=el('p',undefined,'error');choice.setAttribute('aria-label','Pipeline Manager');brief.setAttribute('aria-label','Handoff brief');brief.maxLength=4000;brief.rows=3;
+ for(const p of snapshot.managers||[]){const option=el('option',p.nickname);option.value=p.id;choice.append(option);}if(run.managerAssignment?.profileId)choice.value=run.managerAssignment.profileId;if(!choice.value&&choice.options.length)choice.selectedIndex=0;
+ label.append(choice);briefLabel.append(brief);const submit=el('button','Queue review');submit.type='submit';submit.disabled=!choice.options.length||!online||busy;form.append(title,label,briefLabel,el('p','Queues a review task; this does not restart or approve the external workflow. Repeated handoffs reuse unfinished work.','hint'),error,submit,button('Cancel',()=>dialog.close()));
+ form.onsubmit=async e=>{e.preventDefault();submit.disabled=true;try{const result=await action('handoff',{id:run.id,managerId:choice.value,brief:brief.value});message(result.message+' Task: '+result.taskId);dialog.close();}catch(e){error.textContent=e.message;submit.disabled=false;}};dialog.append(form);dialog.addEventListener('close',()=>dialog.remove(),{once:true});document.body.append(dialog);dialog.showModal();
+}
 function pipeArt(){const n=document.createElementNS('http://www.w3.org/2000/svg','svg');n.setAttribute('viewBox','0 0 210 100');n.setAttribute('class','pipe-art');n.setAttribute('shape-rendering','crispEdges');n.setAttribute('aria-hidden','true');n.innerHTML='<path d="M5 75H32V38H75M135 38H177V75H205" fill="none" stroke="#131c21" stroke-width="24"/><path d="M5 75H32V38H75M135 38H177V75H205" fill="none" stroke="currentColor" stroke-width="15"/><path class="flow" d="M5 75H32V38H75M135 38H177V75H205" fill="none" stroke="#edf8ef" stroke-opacity=".5" stroke-width="3"/><rect x="70" y="13" width="70" height="74" rx="12" fill="#18272d" stroke="currentColor" stroke-width="4"/><rect x="80" y="51" width="50" height="24" rx="4" fill="currentColor" opacity=".22"/><circle cx="105" cy="35" r="14" fill="#e0e9cf"/><path d="M105 35l7-8" stroke="#29383e" stroke-width="3" stroke-linecap="round"/><circle cx="94" cy="61" r="3" fill="#e5f4ee"/><circle cx="116" cy="61" r="3" fill="#e5f4ee"/><path d="M99 70h12" stroke="#e5f4ee" stroke-width="2"/><path d="M52 28v20M158 28v20M22 65h20M167 65h20" stroke="#c1cbc1" stroke-width="4"/><path d="M80 89h50" stroke="#0c1317" stroke-width="5"/>';return n;}
 function renderYard(){
  const focusedRun=document.activeElement?.closest('.pipe-tile')?.dataset.runId;
@@ -136,24 +187,27 @@ function renderDetails(){
  if(root.dataset.runId&&$('local-note'))noteDrafts.set(root.dataset.runId,$('local-note').value);
  $('pipeline-feed').hidden=!!run;$('desk-all').setAttribute('aria-pressed',String(!run));root.hidden=!run;if(!run){checkedSelection='';delete root.dataset.signature;return;}
  checkOnOpen(run);
- const signature=JSON.stringify([run,checkingId]);if(root.dataset.signature===signature)return;root.dataset.signature=signature;root.dataset.runId=run.id;const oldNote=noteDrafts.get(run.id)||'';root.replaceChildren();root.style.setProperty('--pipe',color(run));
+ const signature=JSON.stringify([run,checkingId,snapshot.managers]);if(root.dataset.signature===signature)return;root.dataset.signature=signature;root.dataset.runId=run.id;const oldNote=noteDrafts.get(run.id)||'';root.replaceChildren();root.style.setProperty('--pipe',color(run));
  const head=el('div',undefined,'detail-head'),title=el('div');title.append(el('span',run.platformName+' / '+run.templateName,'detail-label'),el('h2',run.title));const close=button('×',()=>{selected='';if(detailMode){detailMode=false;document.body.classList.remove('detail-mode');}updateFragment();renderYard();renderDetails();});close.setAttribute('aria-label','Close details');head.append(title,close);root.append(head,el('p','Pipeline ID: '+(run.externalId||'Not connected'),'detail-id'));
  const state=el('div',undefined,'detail-status');state.append(el('strong',(symbols[run.status]||'')+' '+runLabel(run)));state.append(el('span',' · '+progressView(run).label));if(run.message)state.append(el('p',run.message));if(run.status!=='ready'&&(run.tracking==='paused'||run.tracking==='expired'))state.append(el('p',run.tracking==='paused'?'Local tracking paused. External work may continue.':'Monitoring budget elapsed. External work may continue.'));root.append(state);
  if(run.progressEstimate){const estimate=run.progressEstimate;root.append(el('p',(run.progressSource==='estimate'?'Estimated by ':'Saved estimate by ')+estimate.author+' · '+date(estimate.at)+' · '+estimate.percent+'%. '+estimate.reason+(run.progressSource==='estimate'?'':' Platform progress or confirmed completion takes priority.'),'hint'));}
  if(run.lastError)root.append(el('p','Last check issue: '+run.lastError+' Showing the last known workflow state.','warning'));
  const actions=el('div',undefined,'detail-actions');actions.append(button('Appearance',()=>editAppearance(run)));
+ if(!demoMode&&run.source!=='board'&&!run.archived){const handoff=button('Hand off to manager',()=>handoffDialog(run));handoff.disabled=!online||busy||!snapshot.managers?.length;actions.append(handoff);}
+ if(run.managerAssignment){const assignment=run.managerAssignment;root.append(el('p','Manager: '+assignment.nickname+' · '+assignment.status+(assignment.available?'':' · unavailable'),'hint'));if(assignment.summary)root.append(el('p',assignment.summary,'manager-report'));if(assignment.waitingReason)root.append(el('p',assignment.waitingReason,'hint'));}
  if(!detailMode&&!paired)actions.append(button('Pop out run',()=>{const url=new URL('/pipeyard/',location.origin);url.hash=new URLSearchParams({admin:token,run:run.id,...(demoMode?{demo:'1'}:{})});window.open(url.href,'pipeyard-'+run.id,'popup,width=760,height=850');}));
  const operate=(name,body={})=>void action(name,{id:run.id,...body}).catch(e=>message(e.message));
  if(run.source==='board'){if(!paired)actions.append(button('Open Board task',()=>openBoard(run)));root.append(el('p',run.description,'hint'));}
  else{
   if(!paired||demoMode)actions.append(button('Edit connection',()=>editConnection(run)));
-  if(demoMode)actions.append(button('Delete demo pipe',async()=>{try{await action('delete-demo',{id:run.id});selected='';renderDetails();message('Demo pipe deleted. Reset restores the original examples.');}catch(error){message(error.message);}}));
+  if(demoMode&&!run.archived)actions.append(button('Delete demo pipe',async()=>{try{await action('delete-demo',{id:run.id});selected='';renderDetails();message('Demo pipe deleted. Reset restores the original examples.');}catch(error){message(error.message);}}));
   if(run.localOnly)actions.append(button('Connect to platform',()=>createDialog('connect-local',run.id)));
   if(demoMode&&run.status==='ready')actions.append(button('Start demo run',()=>operate('start-demo')));
   if(run.externalId){const check=button(checkingId===run.id?'Checking…':'Check now',()=>operate('refresh'));check.disabled=checkingId===run.id;actions.append(check);}
   if(!finished(run)&&run.externalId)actions.append(button(run.tracking==='active'?'Pause tracking':'Resume tracking',()=>run.tracking==='active'?operate('pause-tracking'):askAction('resume-tracking',run)));
   if(!paired&&run.status==='unresolved'&&!run.externalId)actions.append(button('Link existing run',()=>askAction('link',run)));
   for(const name of ['say','approve','pause','resume'])if((!paired||demoMode)&&run.capabilities?.includes(name)&&!finished(run)&&run.externalId&&(name!=='approve'||run.status==='awaiting-approval'))actions.append(button({say:'Message platform',approve:'Review approval',pause:'Pause workflow',resume:'Resume workflow'}[name],()=>askAction(name,run)));
+  if(run.archived)actions.append(button('Delete from History',()=>deleteHistoryDialog(run)));
   actions.append(button(run.archived?'Restore to yard':'Clear from yard',async()=>{try{await action(run.archived?'restore':'clear',{id:run.id});selected='';renderDetails();}catch(e){message(e.message);}}));
  }
  if(paired&&!demoMode)root.append(el('p','Use Pipeyard on the desktop panel for platform approvals, messages and launches.','hint'));root.append(actions);const meta=el('div',undefined,'detail-meta');for(const [label,value]of [['Last checked',date(run.lastCheckedAt)],['Monitoring until',run.deadline?date(run.deadline):'—'],['Next check',run.nextCheckAt?date(run.nextCheckAt):'Not scheduled'],['Approval cost',run.costUsd===null||run.costUsd===undefined?'Not reported':'$'+run.costUsd.toFixed(2)]]){const n=el('div',label);n.append(el('b',value));meta.append(n);}root.append(meta);
@@ -205,7 +259,7 @@ async function switchDemo(enabled){
 }
 
 function resetDemo(){if(!demoMode||busy)return;selected='';historyView=false;detailMode=false;document.body.classList.remove('detail-mode');clearDemoDrafts();$('search').value='';snapshot=demoEngine().reset();resetFeed();updateFragment();renderYard();renderDetails();message('');}
-async function refresh(){if(refreshing)return;refreshing=true;const epoch=viewEpoch;try{const next=demoMode?demoEngine().snapshot():await api('snapshot');if(epoch!==viewEpoch)return;snapshot=next;online=true;$('connection').textContent=demoMode?'Demo · sample progress, no platform calls':'Connected · updated '+new Date().toLocaleTimeString();renderYard();if(document.activeElement?.id!=='local-note')renderDetails();$('launch').disabled=!snapshot.templates.some(t=>t.canLaunch);$('attach').disabled=!snapshot.templates.length;}catch(e){if(epoch!==viewEpoch)return;online=false;renderFeed();$('connection').textContent='Offline · last known view';if(!snapshot.runs.length)$('empty').querySelector('h2').textContent='Live yard unavailable';message(e.message);}finally{if(epoch===viewEpoch)refreshing=false;}}
+async function refresh(){if(refreshing)return;refreshing=true;const epoch=viewEpoch;try{const next=demoMode?demoEngine().snapshot():await api('snapshot');if(epoch!==viewEpoch)return;snapshot=next;online=true;$('connection').textContent=demoMode?'Demo · sample progress, no platform calls':'Connected · updated '+new Date().toLocaleTimeString();renderYard();renderManagers();if(document.activeElement?.id!=='local-note')renderDetails();$('launch').disabled=!snapshot.templates.some(t=>t.canLaunch);$('attach').disabled=!snapshot.templates.length;}catch(e){if(epoch!==viewEpoch)return;online=false;renderFeed();renderManagers();$('connection').textContent='Offline · last known view';if(!snapshot.runs.length)$('empty').querySelector('h2').textContent='Live yard unavailable';message(e.message);}finally{if(epoch===viewEpoch)refreshing=false;}}
 $('demo-toggle').onclick=()=>void switchDemo(!demoMode);$('demo-exit').onclick=()=>void switchDemo(false);$('demo-reset').onclick=resetDemo;
 
 function templateChanged(){const t=snapshot.templates.find(t=>t.id===$('template').value);$('template-description').textContent=t?.description||'';$('run-input').value=JSON.stringify(t?.input||{},null,2);}
@@ -222,9 +276,9 @@ function askAction(name,run){pendingAction={name,run};const titles={say:'Message
 $('action-form').onsubmit=async e=>{e.preventDefault();$('confirm-action').disabled=true;try{const {name,run}=pendingAction,body={id:run.id};if(name==='say')body.message=$('action-text').value;if(name==='link')body.externalId=$('action-text').value.trim();if(name==='resume-tracking')body.minutes=Number($('action-minutes').value);if(name==='approve')Object.assign(body,{confirmed:true,expectedCostUsd:run.costUsd});await action(name,body);$('action-dialog').close();}catch(error){$('action-error').textContent=error.message;}finally{$('confirm-action').disabled=false;}};
 for(const close of document.querySelectorAll('[data-close]'))close.onclick=()=>$(close.dataset.close).close();
 $('active-view').onclick=()=>{historyView=false;selected='';renderYard();renderDetails();};$('history-view').onclick=()=>{historyView=true;selected='';renderYard();renderDetails();};$('search').oninput=renderYard;
-if(visualYard){
+if(visualYard){ await import('/ui/sprites.js');
  const sheet=document.createElement('link');sheet.rel='stylesheet';sheet.href='/setup/pipeyard-ranch.css';document.head.append(sheet);
- const {mountYard}=await import('./pipeyard-ranch.mjs');
+ const {mountYard,stepManagerWalk,bindManagerDrag}=await import('./pipeyard-ranch.mjs');managerStep=stepManagerWalk;managerDrag=bindManagerDrag;
  const animalDemo=demoMode;let demoStorage=null;try{demoStorage=localStorage;}catch{}
  const demoAnimals=animalDemo?createDemoCreatureStore({storage:demoStorage}):null;
  async function animals(body){

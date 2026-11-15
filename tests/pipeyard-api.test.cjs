@@ -115,3 +115,20 @@ test('Ranch animals start empty, persist separately and enforce connection scope
  assert(fs.existsSync(path.join(manager.library.root,'ranch','creatures.json')));
  assert.equal((await request('/admin/ai/pipeyard/ranch-creatures')).status,404);
 }));
+
+test('History delete is authenticated, permission gated, and blocked by unfinished handoffs',()=>fixture(async({request,manager})=>{
+ const created=await(await request('/admin/pipeyard/action',{action:'create-local',requestId:'to-delete',title:'Delete fixture',color:'#67a9a6'})).json();const archived=await(await request('/admin/pipeyard/action',{action:'clear',id:created.id})).json(),body={action:'delete',id:created.id,confirmed:true,expectedUpdatedAt:archived.updatedAt};
+ assert.equal((await request('/control/pipeyard/action',body,'wrong')).status,401);manager.setAiAccess('organize');assert.equal((await request('/admin/ai/pipeyard/action',body)).status,403);
+ manager.tasks.push({id:'review',pipeyardRunId:created.id,status:'todo',attempts:[]});assert.equal((await request('/control/pipeyard/action',body,'a'.repeat(64))).status,400);manager.tasks[0].archived=true;
+ assert.equal((await request('/control/pipeyard/action',body,'a'.repeat(64))).status,200);assert.equal((await(await request('/admin/pipeyard/snapshot')).json()).runs.length,0);
+}));
+
+test('Open session requires an authenticated active bot and cannot accept restart instructions',()=>fixture(async({request,manager,dir})=>{
+ const active=manager.saveProfile({nickname:'Active',folder:dir,color:0,role:'generalist'}),bank=manager.saveProfile({nickname:'Bank',folder:dir,color:1,active:false}),calls=[];manager.action=async(id,action)=>{calls.push({id,action});return {result:'focused'};};
+ for(const [route,key] of [['/admin/profile/session','b'.repeat(64)],['/control/profile/session','a'.repeat(64)]]){
+  assert.equal((await request(route,{id:active.id},'wrong')).status,401);
+  for(const body of [{id:bank.id},{id:'missing'},{id:active.id,action:'new'},{id:active.id,confirmed:true}])assert.equal((await request(route,body,key)).status,400);
+  assert.equal((await request(route,{id:active.id},key)).status,200);
+ }
+ assert.deepEqual(calls,[{id:active.id,action:'resume'},{id:active.id,action:'resume'}]);
+}));

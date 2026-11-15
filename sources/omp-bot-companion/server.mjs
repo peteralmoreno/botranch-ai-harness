@@ -1,3 +1,4 @@
+import {profileYard} from './bot-placement.mjs';
 import http from 'node:http';import {timingSafeEqual,randomUUID} from 'node:crypto';import {STATES} from './state.mjs';
 import fs from 'node:fs';import path from 'node:path';import {fileURLToPath} from 'node:url';
 import os from 'node:os';
@@ -91,6 +92,7 @@ export function createBridge({key,now=Date.now,ttl=12000,focusTerminal=null,admi
     if(req.url==='/admin/task/sticky')return reply(200,manager.setTaskSticky(data));if(req.url==='/admin/family/sticky')return reply(200,manager.setFamilySticky(data));
     if(req.url==='/admin/task/archive')return reply(200,manager.archiveTask(data.id,data.expectedRevision));
     if(req.url==='/admin/task/pipeline')return reply(200,await manager.pipelineAction(data));
+    if(req.url==='/admin/profile/session'){if(!data||Object.keys(data).some(k=>k!=='id')||!manager.profiles.some(p=>p.id===data.id&&p.active))throw Error('Choose an active bot.');return reply(200,await manager.action(data.id,'resume'));}
     if(req.url==='/admin/task/retry')return reply(200,await manager.prepareTaskRetry(data.id,data.expectedRevision));
     if(req.url==='/admin/task/review')return reply(200,manager.reviewTask(data.id,data.expectedRevision,data.action,data.note));
     if(req.url==='/admin/membership')return reply(200,manager.setMembership(data.id,data.active,data.expectedRevision));
@@ -114,12 +116,13 @@ export function createBridge({key,now=Date.now,ttl=12000,focusTerminal=null,admi
     if(req.url==='/control/ranch/creatures'){const result=await pipeyard.handle({method:'POST',url:'/admin/pipeyard/ranch-creatures',body:data});return reply(result.status,result.body);}
     if(req.url==='/control/pipeyard/creatures'){const result=await pipeyard.handle({method:'POST',url:'/admin/pipeyard/creatures',body:data});return reply(result.status,result.body);}
     if(req.url==='/control/pipeyard/action'){
-     if(!['set-appearance','create-local','connect-local','register','note','estimate-progress','review-progress','refresh','check-due','pause-tracking','resume-tracking','clear','restore'].includes(data.action))return reply(403,{error:'Open Pipeyard from the desktop panel for platform operations.'});
+     if(!['create-manager','start-manager','check-yard','handoff','set-appearance','create-local','connect-local','register','note','estimate-progress','review-progress','refresh','check-due','pause-tracking','resume-tracking','clear','restore','delete'].includes(data.action))return reply(403,{error:'Open Pipeyard from the desktop panel for platform operations.'});
      const result=await pipeyard.handle({method:'POST',url:'/admin/pipeyard/action',body:data});return reply(result.status,result.body);
     }
     if(req.url==='/control/ui/attention'){manager.uiRequest={id:randomUUID(),view:'attention'};return reply(200,{message:'Requested the sidebar attention view.'});}
     if(req.url==='/control/profiles/wake')return reply(200,manager.wakeSleeping());
     if(req.url==='/control/profiles/check-work')return reply(200,manager.checkAvailableWork());
+    if(req.url==='/control/profile/session'){if(!data||Object.keys(data).some(k=>k!=='id')||!manager.profiles.some(p=>p.id===data.id&&p.active))throw Error('Choose an active bot.');return reply(200,await manager.action(data.id,'resume'));}
     if(req.url==='/control/project-manager'){const p=manager.profiles.find(p=>p.id===data.id&&p.active&&p.role==='pm');if(!p)throw Error('Choose an active Project Manager. Create one in Factory if needed.');return reply(200,await manager.action(p.id,'resume'));}
 
     if(req.url==='/control/task/queue')return reply(200,manager.queueTask(data));if(req.url==='/control/task/stop')return reply(200,await manager.stopTask(data.id,data.confirmed,data.expectedAttemptId));if(req.url==='/control/task')return reply(200,manager.saveTask(data));
@@ -142,7 +145,7 @@ export function createBridge({key,now=Date.now,ttl=12000,focusTerminal=null,admi
   const provided=Buffer.from(req.headers.authorization||''),expected=Buffer.from('Bearer '+key);
   if(provided.length!==expected.length||!timingSafeEqual(provided,expected))return reply(401,{error:'Pairing key rejected'});
   for(const [id,s]of sessions)if(now()-s.lastSeen>300000){sessions.delete(id);terminals.delete(id);}
-  if(req.method==='GET'&&req.url==='/state'){if(selectedId&&!sessions.has(selectedId)&&!manager?.residents().some(s=>s.id===selectedId)){selectedId='';selectionRevision++;}if(manager)manager.widgetSeen=now();return reply(200,{app:'omp-bot',version:1,capabilities:{focus:!!focusTerminal||!!manager,selection:true},selectedId,selectionRevision,selectionInstance,sleepSeconds:manager?.sleepSeconds||120,sessions:[...(manager?.residents()||[]),...[...sessions.values()].filter(s=>!managedIds.has(s.id)).map(s=>{const stale=now()-s.lastSeen>ttl;return {...s,...(s.state==='offline'?{metadata:undefined}:{}),...(stale?{state:'offline',label:'Terminal disconnected',metadata:undefined}:{}),canFocus:!!focusTerminal&&terminals.has(s.id)&&!stale&&s.state!=='offline'};})]});}
+  if(req.method==='GET'&&req.url==='/state'){if(selectedId&&!sessions.has(selectedId)&&!manager?.residents().some(s=>s.id===selectedId)){selectedId='';selectionRevision++;}if(manager)manager.widgetSeen=now();return reply(200,{app:'omp-bot',version:1,capabilities:{focus:!!focusTerminal||!!manager,selection:true},selectedId,selectionRevision,selectionInstance,sleepSeconds:manager?.sleepSeconds||120,sessions:[...(manager?.residents()||[]).filter(p=>profileYard(p)==='ranch'),...[...sessions.values()].filter(s=>!managedIds.has(s.id)).map(s=>{const stale=now()-s.lastSeen>ttl;return {...s,...(s.state==='offline'?{metadata:undefined}:{}),...(stale?{state:'offline',label:'Terminal disconnected',metadata:undefined}:{}),canFocus:!!focusTerminal&&terminals.has(s.id)&&!stale&&s.state!=='offline'};})]});}
   if(req.method==='POST'&&req.url==='/selection'){
    try{const chunks=[];let bytes=0;for await(const chunk of req){bytes+=chunk.length;if(bytes>256)return reply(413,{error:'Request too large'});chunks.push(chunk);}const data=JSON.parse(Buffer.concat(chunks).toString('utf8'));
     if(!data||typeof data.id!=='string'||Object.keys(data).length!==1)return reply(400,{error:'Expected a session ID only'});

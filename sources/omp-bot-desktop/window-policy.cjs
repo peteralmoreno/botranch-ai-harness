@@ -56,8 +56,8 @@ function actionRequest(name, body) {
   if (name === 'ring-all' && objectWithKeys(body, [])) return {route:'/admin/profile/ring-all',body:{}};
   if (['session','focus','clean'].includes(name) && objectWithKeys(body,['id']) && validId(body.id)) return name==='clean'?{route:'/admin/profile/clean',body}:{route:'/admin/action',body:{id:body.id,action:name==='session'?'resume':'focus'}};
   if (name==='membership' && objectWithKeys(body,['id','active','expectedRevision']) && validId(body.id) && typeof body.active==='boolean' && revision(body.expectedRevision)) return {route:'/admin/membership',body};
-  if (name==='factory' && fields(body,['nickname','folder','role','color'],['design','personality','contextPolicy','instructionsPath','autoPickup','readOnly']) && typeof body.nickname==='string' && body.nickname.trim() && body.nickname.length<=32 && typeof body.folder==='string' && validId(body.role) && Number.isInteger(body.color) && body.color>=0 && body.color<32) return {route:'/admin/profile',body:{...body,active:false}};
-  if (name==='profile-save' && fields(body,['id','expectedRevision','nickname','folder','role','color'],['design','personality','contextPolicy','instructionsPath','autoPickup','readOnly']) && validId(body.id) && revision(body.expectedRevision)) {
+  if (name==='factory' && fields(body,['nickname','folder','role','color'],['yard','design','personality','contextPolicy','instructionsPath','autoPickup','readOnly']) && (body.yard===undefined||['ranch','pipeyard'].includes(body.yard)) && typeof body.nickname==='string' && body.nickname.trim() && body.nickname.length<=32 && typeof body.folder==='string' && validId(body.role) && Number.isInteger(body.color) && body.color>=0 && body.color<32) return {route:'/admin/profile',body:{...body,active:false}};
+  if (name==='profile-save' && fields(body,['id','expectedRevision','nickname','folder','role','color'],['yard','design','personality','contextPolicy','instructionsPath','autoPickup','readOnly']) && validId(body.id) && revision(body.expectedRevision)) {
     const {id,expectedRevision,...profile}=body;
     actionRequest('factory',profile);
     return {route:'/admin/profile',body};

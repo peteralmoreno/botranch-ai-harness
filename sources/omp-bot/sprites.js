@@ -18,6 +18,10 @@ window.RanchSprites=(()=>{
    const pm=`<g class="pm">${rect(20,12,25,5,ink)}${rect(22,12,21,3,light)}<path d="M17 26v-7h4m23 0h4v13h-8" fill="none" stroke="${ink}" stroke-width="3"/>${rect(14,23,5,8,light)}${rect(46,23,5,8,light)}${rect(38,30,5,3,cream)}${rect(23,36,19,12,c)}<path d="m26 36 6 9 7-9" fill="${cream}"/>${rect(31,38,3,6,ink)}${rect(39,38,12,15,ink)}${rect(41,40,8,11,cream)}${rect(43,38,4,4,light)}${rect(43,44,4,2,c)}${rect(43,48,4,1,ink)}</g>`;
    result=result.replace('<g class="prop">',pm+'<g class="prop">');
   }
+  if(design==='farmer'){
+   const farmer=`<g class="farmer"><g class="straw-hat">${rect(21,6,23,10,ink)}${rect(23,5,19,10,'#d6b86f')}${rect(23,12,19,4,'#a47d45')}${rect(12,15,42,5,ink)}${rect(13,14,40,4,'#edd294')}${rect(26,7,3,5,'#f3dda0')}</g>${rect(24,35,17,15,'#597f91')}${rect(24,34,4,13,'#82a5ad')}${rect(37,34,4,13,'#82a5ad')}${rect(25,39,2,2,'#e8cf86')}${rect(38,39,2,2,'#e8cf86')}${rect(29,42,7,5,'#395968')}${rect(23,48,8,7,'#597f91')}${rect(35,48,8,7,'#597f91')}<path d="M36 31h7l9-5m-6 4 4 2" stroke="#efd288" stroke-width="2" fill="none"/></g>`;
+   result=result.replace('<g class="prop">',farmer+'<g class="prop">');
+  }
   if(design==='designer'){
    // Beret, paint-splashed apron, palette and a brush kept outside the face display.
    const designer=`<g class="designer"><g class="beret"><path d="M18 10h4V7h6V4h13v3h5v8H18z" fill="${ink}"/>${rect(22,9,21,4,c)}${rect(29,6,10,3,light)}${rect(35,2,3,5,ink)}${rect(20,14,25,3,ink)}</g>${rect(24,36,17,14,cream)}${rect(26,36,3,6,light)}${rect(36,36,3,6,light)}${rect(28,43,3,3,'#b51f43')}${rect(34,46,4,2,'#68bbc3')}<g class="palette"><path d="M9 39h10v3h4v8h-4v3H9v-3H6v-8h3z" fill="${ink}"/><path d="M10 41h8v3h3v5h-4v2h-7v-3H8v-5h2z" fill="#dcb778"/>${rect(10,43,3,3,'#b51f43')}${rect(15,46,3,3,'#68bbc3')}${rect(10,48,3,2,'#8fae76')}</g><g class="paintbrush">${rect(50,28,4,24,ink)}${rect(51,30,2,20,'#dcb778')}${rect(48,24,8,7,'#c5c6b8')}${rect(48,18,8,7,ink)}${rect(49,17,6,8,cream)}${rect(49,17,6,4,c)}${rect(50,15,4,3,c)}${rect(47,40,6,5,light)}</g></g>`;

@@ -1,7 +1,7 @@
 const {test}=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs');const os=require('node:os');const path=require('node:path');
 test('bot home seeds editable roles, preserves instructions, and roundtrips portable profiles without runtime credentials',async()=>{
  const {BotLibrary}=await import('../sources/omp-bot-companion/bot-library.mjs');const root=fs.mkdtempSync(path.join(os.tmpdir(),'bot-library-'));const lib=new BotLibrary(root);
- assert.equal(lib.roles().length,8);assert.match(lib.role('designer').instructions,/typography/);assert.match(lib.role('pipeline').instructions,/external job/);const role=lib.role('reviewer');assert.ok(role.instructions.includes('Review'));
+ assert.equal(lib.roles().length,9);assert.equal(lib.role('pipeyard-manager').name,'Pipeline Manager');assert.match(lib.role('designer').instructions,/typography/);assert.match(lib.role('pipeline').instructions,/external job/);const role=lib.role('reviewer');assert.ok(role.instructions.includes('Review'));
  lib.saveRole({id:'designer',name:'Custom designer',model:'auto',instructions:'Use our existing visual language.'});assert.equal(new BotLibrary(root).role('designer').instructions,'Use our existing visual language.');
  const file=path.join(root,'custom.md');fs.writeFileSync(file,'Check invariants first.');lib.saveRole({id:'custom',name:'Careful reviewer',model:'claude',instructionsPath:file});assert.equal(lib.role('custom').instructions,'Check invariants first.');
  lib.saveProfile({id:'abc-123',nickname:'Cedar',color:14,role:'custom',folder:root,active:true,sessionKey:'private',controlKey:'secret'});

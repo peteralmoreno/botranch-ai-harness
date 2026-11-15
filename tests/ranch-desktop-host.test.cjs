@@ -81,3 +81,11 @@ test('Pipeyard IPC allows local operations only and keeps credentials in the hos
  assert.equal((await client.pipeyard('config')).ok,false);assert.equal(calls.length,2);
  assert.equal((await client.pipeyard('action',{action:'set-appearance',id:'run-1',shape:'quick',color:'#b51f43'})).ok,true);assert.deepEqual(JSON.parse(calls.at(-1).options.body),{action:'set-appearance',id:'run-1',shape:'quick',color:'#b51f43'});for(const body of [{shape:'bad'},{color:'red'},{}])assert.equal((await client.pipeyard('action',{action:'set-appearance',id:'run-1',...body})).ok,false);
 });
+
+
+test('Pipeyard deletion forwards only a confirmed current record',async()=>{
+ const calls=[],client=host.createCompanionClient({origin:'http://127.0.0.1:12345',adminKey:'admin-secret',pairingKey:'pair-secret'},async(url,options)=>{calls.push({url,options});return {ok:true,json:async()=>({deleted:true})};});
+ for(const body of [{id:'run-1'},{id:'run-1',confirmed:true},{id:'run-1',confirmed:true,expectedUpdatedAt:-1},{id:'run-1',confirmed:false,expectedUpdatedAt:123}])assert.equal((await client.pipeyard('action',{action:'delete',...body})).ok,false);
+ assert.equal(calls.length,0);assert.equal((await client.pipeyard('action',{action:'delete',id:'run-1',confirmed:true,expectedUpdatedAt:123,other:'ignored'})).ok,true);
+ assert.deepEqual(JSON.parse(calls[0].options.body),{action:'delete',id:'run-1',confirmed:true,expectedUpdatedAt:123});
+});

@@ -8,7 +8,7 @@ Install the complete release ZIP with **Install botRanch.cmd**, then open **botR
 - [Build](../../docs/guides/build-and-import.md)
 - [Desktop/Ranch](../../docs/guides/bot-ranch-desktop.md)
 - [AI Sync](../../docs/guides/bot-ranch-ai-sync.md) and [API](../../docs/guides/bot-ranch-api.md)
-- [Pipeline tasks](../../docs/guides/bot-ranch-pipeline.md), [Pipeyard](../../docs/guides/bot-ranch-pipeyard.md), [/loop](../../docs/guides/bot-ranch-loop.md)
+- [Pipeline tasks](../../docs/guides/bot-ranch-pipeline.md), [Pipeyard quick start and reuse](../../docs/guides/bot-ranch-pipeyard.md), [/loop](../../docs/guides/bot-ranch-loop.md)
 - [Project Manager skill](skills/bot-ranch-pm/SKILL.md)
 
 Default endpoint: `http://127.0.0.1:43822`. State/credentials stay under `%LOCALAPPDATA%\OmpBot`; configured bot home contains portable coordination data. Use the CLI/API for live changes. Keep credentials private and do not expose the service publicly.

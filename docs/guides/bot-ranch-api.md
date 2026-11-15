@@ -31,7 +31,7 @@ Inspect reads/previews; Organize applies organizational edits; Operate permits e
 - `POST /control/pickup` with `{paused}`: pause/resume new pickup.
 - `POST /control/project-manager` with `{id}`: focus the selected active PM.
 - `POST /control/ui/attention`: open desktop attention controls.
-- `GET /control/pipeyard/snapshot`, `POST /control/pipeyard/action`: restricted local pipe controls.
+- `GET /control/pipeyard/snapshot`, `POST /control/pipeyard/action`: restricted local pipe controls. Human controls include `create-manager`, `start-manager`, `check-yard`, and `handoff`. Agent `handoff` / `check-yard` actions require AI Sync Operate; snapshots include the two-manager limit, manager states, and run assignments.
 - `GET/POST /control/ranch/creatures`: separate, initially empty Ranch herd; requires the connection key, revision, and current home scope for writes.
 - `GET/POST /admin/pipeyard/creatures` and `/control/pipeyard/creatures`: revisioned animal state.
 
@@ -42,3 +42,9 @@ The widget pipe action allowlist is `set-appearance`, `create-local`, `connect-l
 `/runtime/*` is reserved for managed extensions with per-launch credentials and task/session ownership checks. `ranch_status` publishes a short milestone or blocker, at most 240 characters/two lines. Internal `thinking` is presented as Working. Task `workStation` is `auto`, `reading`, `researching`, `writing`, or `workshop`; it affects visuals, not execution permissions.
 
 [AI Sync](bot-ranch-ai-sync.md) · [Pipeyard](bot-ranch-pipeyard.md) · [Pipeline tasks](bot-ranch-pipeline.md)
+
+Saved bot profiles expose `yard: "ranch" | "pipeyard"`, independent of role and design. Factory edits this preference; Bank admission uses it. Older profiles without `yard` default Pipeline Managers to Pipeyard and other roles to Ranch. Pipeyard snapshots expose all stationed profiles as `bots`, while `managers` lists only eligible Pipeline Managers for handoffs.
+
+`POST /control/profile/session` with `{id}` opens or focuses an active bot of any role in either yard; it never restarts an already-live session. `POST /admin/profile/session` provides the same operation for the desktop.
+
+Pipeyard `delete` requires `{id, confirmed:true, expectedUpdatedAt}` for an archived record. Use the current snapshot timestamp; stale confirmations and unfinished manager handoffs are rejected. Requires Operate access for agents. It removes local run data only; hashed receipts prevent reuse of a deleted launch request ID.

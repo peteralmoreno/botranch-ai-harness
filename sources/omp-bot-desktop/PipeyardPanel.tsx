@@ -1,7 +1,8 @@
 import {botColors,colorNames} from './sidebar-model';
 import {useEffect,useRef,useState,type CSSProperties,type ReactNode} from 'react';
 
-type Run={shape?:string;localOnly?:boolean;id:string;title:string;templateName:string;platformName?:string;externalId?:string;status:string;tracking:string;source?:string;taskId?:string;color?:string;archived?:boolean;message?:string;lastError?:string;checkDue?:boolean;lastCheckedAt?:number;nextCheckAt?:number;displayProgress?:number|null;progress?:number|null;progressSource?:string;progressEstimate?:unknown;progressResponse?:{source:string;fetchedAt:number;data:unknown};metadata?:unknown;input?:unknown;result?:unknown;stages?:unknown;platformNotes?:unknown;notes?:{id:string;at:number;text:string}[];events?:{id:string;at:number;text?:string;message?:string}[]};
+type Manager={id:string;nickname:string;state:string;label:string;taskCount:number};
+type Run={managerAssignment?:{nickname:string;status:string;summary:string;available:boolean};updatedAt?:number;shape?:string;localOnly?:boolean;id:string;title:string;templateName:string;platformName?:string;externalId?:string;status:string;tracking:string;source?:string;taskId?:string;color?:string;archived?:boolean;message?:string;lastError?:string;checkDue?:boolean;lastCheckedAt?:number;nextCheckAt?:number;displayProgress?:number|null;progress?:number|null;progressSource?:string;progressEstimate?:unknown;progressResponse?:{source:string;fetchedAt:number;data:unknown};metadata?:unknown;input?:unknown;result?:unknown;stages?:unknown;platformNotes?:unknown;notes?:{id:string;at:number;text:string}[];events?:{id:string;at:number;text?:string;message?:string}[]};
 const labels:Record<string,string>={running:'Running',queued:'Queued',paused:'Workflow paused','awaiting-approval':'Needs approval',succeeded:'Completed',failed:'Failed',cancelled:'Cancelled',unknown:'Status unknown',unresolved:'Needs reconciliation',submitting:'Submitting',ready:'Ready'};
 const runLabel=(r:Run)=>r.localOnly?'Local placeholder':labels[r.status]||r.status;
 const completed=(r:Run)=>['succeeded','failed','cancelled'].includes(r.status);
@@ -18,30 +19,36 @@ function ObjectView({value}:{value:unknown}){
  return <div className="pipe-object">{branch(value,'Response',0)}<details><summary>Raw JSON</summary><pre tabIndex={0}>{JSON.stringify(value,null,2)}</pre></details></div>;
 }
 export default function PipeyardPanel({connected,popout,openRanch,drafts}:{drafts:Map<string,string>;connected:boolean;popout:(taskId?:string)=>void;openRanch:()=>void}){
+ const [managers,setManagers]=useState<Manager[]>([]),[managerId,setManagerId]=useState(''),[pickupPaused,setPickupPaused]=useState(false);
  const [runs,setRuns]=useState<Run[]>([]),[selected,setSelected]=useState(''),[query,setQuery]=useState(''),[filter,setFilter]=useState('active');
  const [appearance,setAppearance]=useState({shape:'standard',color:'#61b7ba'});
+ const [deleteTarget,setDeleteTarget]=useState<{id:string;updatedAt:number;title:string}|null>(null);
  const [available,setAvailable]=useState(false),[pending,setPending]=useState(false),[notice,setNotice]=useState(''),[note,setNote]=useState(''),[minutes,setMinutes]=useState(60);
  const alive=useRef(true),fetching=useRef(false),working=useRef(false),checked=useRef('');
  async function refresh(){
   if(fetching.current)return;fetching.current=true;
-  try{const reply=await window.botRanch.pipeyard('snapshot');if(reply.error||!Array.isArray(reply.result?.runs))throw Error(reply.error||'Invalid pipeline response.');if(alive.current){setRuns(reply.result.runs);setAvailable(true);}}
+  try{const reply=await window.botRanch.pipeyard('snapshot');if(reply.error||!Array.isArray(reply.result?.runs))throw Error(reply.error||'Invalid pipeline response.');if(alive.current){setRuns(reply.result.runs);setManagers(reply.result.managers||[]);setPickupPaused(!!reply.result.pickupPaused);setAvailable(true);}}
   catch{if(alive.current){setAvailable(false);setNotice('Pipeyard unavailable. Showing saved information; actions are disabled.');}}finally{fetching.current=false;}
  }
  useEffect(()=>{alive.current=true;if(connected)void refresh();else setAvailable(false);const timer=setInterval(()=>{if(connected&&!working.current&&!document.hidden)void refresh();},4000);return()=>{alive.current=false;clearInterval(timer);};},[connected]);
  async function act(action:string,body:object={},success='Updated.'){
   if(!connected||!available||working.current)return false;
   working.current=true;setPending(true);setNotice('');
-  try{const reply=await window.botRanch.pipeyard('action',{action,id:selected,...body});if(reply.error)throw Error(reply.error);if(alive.current){setNotice(success);await refresh();}return true;}
+  try{const reply=await window.botRanch.pipeyard('action',{action,id:selected,...body});if(reply.error)throw Error(reply.error);if(alive.current){setNotice(['handoff','check-yard'].includes(action)&&reply.result?.message?reply.result.message:success);await refresh();}return true;}
   catch(error){if(alive.current)setNotice(error instanceof Error?error.message:'Pipeline action failed.');return false;}
   finally{working.current=false;if(alive.current)setPending(false);}
  }
+ useEffect(()=>{if(!managers.some(p=>p.id===managerId))setManagerId(managers[0]?.id||'');},[managers,managerId]);
  const run=runs.find(r=>r.id===selected),disabled=!connected||!available||pending;
  useEffect(()=>{if(!selected){checked.current='';return;}if(!run||disabled||checked.current===selected)return;checked.current=selected;if(run.checkDue&&!run.archived&&run.externalId&&run.source!=='board'&&!completed(run))void act('check-due',{},'Due progress checked.');},[selected,run?.id,disabled]);
  useEffect(()=>{setAppearance({shape:run?.shape||'standard',color:run?.color||'#61b7ba'});},[run?.id,run?.shape,run?.color]);
- const choose=(r:Run)=>{checked.current='';setSelected(r.id);setNote(drafts.get(r.id)||'');setNotice('');};
+ const choose=(r:Run)=>{checked.current='';setDeleteTarget(null);setSelected(r.id);setNote(drafts.get(r.id)||'');setNotice('');};
  const visible=runs.filter(r=>(filter==='history'?!!r.archived:!r.archived)&&(filter!=='attention'||attention(r))&&[r.title,r.externalId,r.templateName].join(' ').toLowerCase().includes(query.toLowerCase()));
  return <section className="pipe-panel" aria-label="Pipeline operations">
   <div className="section-toolbar"><button className="text-button" disabled={pending} onClick={()=>void refresh()}>Refresh list</button><button className="text-button" onClick={()=>popout()}>Full Pipeyard</button><button className="text-button" onClick={openRanch}>Visual Ranch</button></div>
+
+  {run&&run.source!=='board'&&!run.archived&&managers.length>0&&<div className="pipe-manager-handoff"><label>Manager<select value={managerId} onChange={e=>setManagerId(e.target.value)}>{managers.map(p=><option key={p.id} value={p.id}>{p.nickname}</option>)}</select></label><button disabled={disabled||!managerId} onClick={()=>void act('handoff',{managerId},'Manager review queued. '+(pickupPaused?'Pickup is paused.':''))}>Hand off run</button></div>}
+  {run?.managerAssignment&&<p className="field-hint">{run.managerAssignment.nickname} · {run.managerAssignment.status}{run.managerAssignment.summary&&' · '+run.managerAssignment.summary}</p>}
   {notice&&<p className="inline-notice" role="status">{notice}</p>}
   {run?<div className="sidebar-detail pipe-detail">
    <button className="text-button" disabled={pending} onClick={()=>{setSelected('');setNotice('');}}>Back to pipelines</button><h2>{run.title}</h2>
@@ -59,7 +66,9 @@ export default function PipeyardPanel({connected,popout,openRanch,drafts}:{draft
      <button disabled={!run.externalId||!!run.archived} onClick={()=>void act('refresh',{},'Progress checked.')}>Check now</button>
      {run.tracking==='active'&&!completed(run)&&!run.archived&&<button onClick={()=>void act('pause-tracking',{},'Local monitoring paused.')}>Pause monitoring</button>}
      <button onClick={()=>void act(run.archived?'restore':'clear',{},run.archived?'Returned to the yard.':'Cleared from the yard; retained in History.')}>{run.archived?'Restore to yard':'Clear from yard'}</button>
+     {run.archived&&<button disabled={!Number.isSafeInteger(run.updatedAt)} onClick={()=>setDeleteTarget({id:run.id,title:run.title,updatedAt:run.updatedAt!})}>Delete from History</button>}
     </div>
+    {deleteTarget?.id===run.id&&<div role="group" aria-label="Confirm History deletion"><p>Delete {deleteTarget.title}, its local notes and saved results permanently? External work and Board task history are unchanged.</p><div className="button-row"><button onClick={()=>setDeleteTarget(null)}>Cancel deletion</button><button onClick={async()=>{const target=deleteTarget;if(await act('delete',{id:target.id,confirmed:true,expectedUpdatedAt:target.updatedAt},'Deleted from local History.')){drafts.delete(target.id);setDeleteTarget(null);setSelected('');}}}>Delete permanently</button></div></div>}
     {!completed(run)&&run.externalId&&run.tracking!=='active'&&!run.archived&&<><label>Monitor for<select value={minutes} onChange={e=>setMinutes(Number(e.target.value))}>{[10,20,40,60,120].map(n=><option key={n} value={n}>{n<60?n+' minutes':n/60+' hour'+(n===120?'s':'')}</option>)}</select></label><button onClick={()=>void act('resume-tracking',{minutes},'Local monitoring resumed.')}>Resume monitoring</button></>}
     <label htmlFor="pipe-local-note">Local pipeline note</label><textarea id="pipe-local-note" value={note} maxLength={4000} rows={3} onChange={e=>{setNote(e.target.value);drafts.set(run.id,e.target.value);}}/><button disabled={!note.trim()} onClick={async()=>{const text=note,id=run.id;if(await act('note',{text},'Note saved.')){if(drafts.get(id)===text)drafts.delete(id);if(alive.current)setNote('');}}}>Save note</button>
     </fieldset><p className="field-hint">Clear only removes local visibility. It does not cancel external work. Platform actions and connection edits are in Full Pipeyard.</p>

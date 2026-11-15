@@ -13,6 +13,17 @@ async function serverFixture(native={}){
  return {dir,manager,server,url:'http://127.0.0.1:'+server.address().port};
 }
 
+test('settings preserve a renamed manager and Farmer design through normal profile editing',async({page})=>{
+ const {dir,manager,server,url}=await serverFixture();
+ try{
+  manager.saveProfile({nickname:'Willow',folder:dir,color:7,role:'pipeyard-manager',design:'farmer',active:false});
+  await page.goto(url+'/setup/#admin='+'b'.repeat(64));await page.locator('[data-panel=bots]').click();
+  await page.getByRole('button',{name:'Edit',exact:true}).click();await expect(page.getByRole('combobox',{name:'Design',exact:true})).toHaveValue('farmer');
+  await page.getByRole('combobox',{name:'Assigned yard',exact:true}).selectOption('ranch');await page.getByLabel('Nickname').fill('Juniper');await page.getByRole('button',{name:'Save resident'}).click();
+  await expect.poll(()=>manager.profiles[0].nickname).toBe('Juniper');expect(manager.profiles[0]).toMatchObject({role:'pipeyard-manager',yard:'ranch',design:'farmer',color:7,active:false});
+ }finally{server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
+});
+
 test('settings keep terminal safeguards and provide one widget connection key',async({page})=>{
  let live=false;const starts=[];
  const native={checks:async()=>[{name:'Test runtime',ok:true,detail:'Ready'}],status:async()=>live?'live':'closed',launch:async(p,r,mode)=>{live=true;starts.push(mode);return {pid:321,started:'638000000000000000'};},focus:async()=> 'focused',close:async()=>{live=false;return 'closed';}};
@@ -68,8 +79,8 @@ test('Large Ranch observes activity and leaves task and profile management in th
   await expect(page.locator('#full-status')).toContainText('Writing files');
   await expect(page.locator('#full-metadata')).toContainText('Claude');
   await expect(page.locator('#full-preview')).toContainText('Visible result excerpt');
-  await page.getByRole('button',{name:'Open terminal',exact:true}).click();
-  await expect(page.locator('#focus-result')).toContainText('Terminal brought forward');
+  await page.getByRole('dialog',{name:'Bot details'}).getByRole('button',{name:'Open session',exact:true}).click();
+  await expect(page.locator('#focus-result')).toContainText('Session brought forward');
   await page.locator('#details-close').click();
   await page.locator('#connect').click();
   await expect(page.getByLabel('Connection key',{exact:true})).toHaveValue('a'.repeat(64));

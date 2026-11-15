@@ -1,12 +1,12 @@
 # botRanch AI Harness
 
-Version **1.0.3**.
+Version **1.1.5**.
 
 A Windows companion for local AI work, with a playful Ranch view for desktop or Corsair XENEON EDGE.
 
 - **Sidebar:** create tasks, assign bots, manage queues and saved profiles.
 - **Ranch:** observe activity, inspect bots, and use explicit bell/work controls.
-- **Pipeyard:** track external workflows, inspect progress, and keep local notes.
+- **Pipeyard:** track external workflows, inspect progress, and keep local notes. [Pipeline quick start and reuse guide](docs/guides/bot-ranch-pipeyard.md).
 - **AI Sync:** let authorized agents manage the same Board through a local CLI/API.
 
 ## Install

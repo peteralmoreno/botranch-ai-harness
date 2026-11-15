@@ -161,6 +161,9 @@ test('isolated hidden desktop keeps its bridge secure, resizes natively and leav
     assert.equal(application.windows().length,1);
     assert.equal(requests.filter(url=>url==='/admin/shutdown').length,2);
     connectionVersion=1;
+    // A release mismatch with the same protocol keeps Ranch usable while busy.
+    const manifestPath=path.join(stage,'ui/manifest.json'),manifest=JSON.parse(fs.readFileSync(manifestPath,'utf8'));
+    fs.writeFileSync(manifestPath,JSON.stringify({...manifest,version:'99.0.0'}));
     assert.equal((await page.evaluate(()=>window.botRanch.openPage('ranch'))).ok,true);
     await expect.poll(()=>application.windows().length).toBe(2);
     assert.equal((await page.evaluate(()=>window.botRanch.window('info'))).mode,'app');
@@ -168,7 +171,7 @@ test('isolated hidden desktop keeps its bridge secure, resizes natively and leav
     const response = await fetch(origin + '/admin/state', {headers: {Authorization: 'Bearer ' + adminKey}, signal: AbortSignal.timeout(3000)});
     assert.equal(response.status, 200);
     assert.equal((await response.json()).profiles[0].activityBusy, true);
-    assert.equal(requests.filter(url => url === '/admin/shutdown').length, 2);
+    assert.equal(requests.filter(url => url === '/admin/shutdown').length, 3);
     const saved = JSON.parse(fs.readFileSync(path.join(temporary, 'desktop-data/window.json'), 'utf8'));
     assert.equal(saved.panelSize.width,resized.panelSize.width);
     assert.equal(saved.mode,'app');assert.equal(saved.pinned,false);assert.ok(saved.ranchBounds.width>=680);
@@ -177,7 +180,7 @@ test('isolated hidden desktop keeps its bridge secure, resizes natively and leav
     await expect.poll(()=>application.windows().length).toBe(2);
     const reopened=application.windows().find(p=>p.url().startsWith(origin+'/ui/'));
     assert.ok(reopened);await expect(reopened.locator('.bot')).toHaveCount(1);
-    assert.equal(requests.filter(url=>url==='/admin/shutdown').length,2);
+    assert.equal(requests.filter(url=>url==='/admin/shutdown').length,4);
   } finally {
     if (application) await application.close().catch(() => {});
     if (server) {server.closeAllConnections(); await new Promise(resolve => server.close(resolve));}

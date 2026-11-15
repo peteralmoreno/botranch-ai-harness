@@ -119,6 +119,56 @@ const creatures=await mountCreatures({loadState,saveState,layer:animalLayer,art:
 }});
 
 const animal=document.getElementById('yard-add-animal'),group=document.createElement('div'),add=document.createElement('button');group.className='yard-add-controls';add.type='button';add.textContent='＋ Pipeline';add.id='yard-add-pipeline';add.onclick=addPipeline;animal.before(group);group.append(animal,add);
+animal.textContent='＋ Animal';animal.setAttribute('aria-label','＋ Add animal');
+$('active-view').textContent='Yard';$('active-view').setAttribute('aria-label','Active yard');
+const saveStatus=document.querySelector('.creature-save-status'),footer=document.querySelector('.yard-footer');if(saveStatus)footer.insertBefore(saveStatus,footer.lastElementChild);
 return creatures;
 
+}
+
+// Moving a bot is play only: its profile, tasks and AI session are untouched.
+export function bindManagerDrag({actor,pose,pasture,onSelect,isEnabled=()=>true}){
+ let held=null;
+ const paint=()=>{const paused=pose.paused;pose.paused=true;stepManagerWalk(pose,{width:pasture.clientWidth,height:pasture.clientHeight,actorWidth:actor.offsetWidth,actorHeight:actor.offsetHeight},0);pose.paused=paused;actor.style.transform=`translate(${pose.x}px,${pose.y}px)`;};
+ function finish(cancel=false){
+  if(!held)return;const drag=held;held=null;pose.held=false;actor.dataset.held='false';actor.dataset.dragging='false';
+  if(cancel){pose.x=drag.x;pose.y=drag.y;}else if(drag.moved){delete pose.tx;delete pose.ty;pose.wait=1.2;if(document.activeElement===actor)actor.blur();}
+  paint();try{actor.releasePointerCapture(drag.pointer);}catch{}
+  if(!cancel&&!drag.moved&&isEnabled())onSelect();
+ }
+ actor.draggable=false;actor.onclick=null;
+ actor.addEventListener('pointerdown',event=>{
+  if(!isEnabled()||held||!event.isPrimary||event.button!==0)return;
+  event.preventDefault();event.stopPropagation();actor.focus({preventScroll:true});
+  held={pointer:event.pointerId,startX:event.clientX,startY:event.clientY,x:pose.x,y:pose.y,moved:false};pose.held=true;pose.walking=false;actor.dataset.held='true';actor.dataset.walking='false';
+  try{actor.setPointerCapture(event.pointerId);}catch{finish(true);}
+ });
+ actor.addEventListener('pointermove',event=>{
+  if(!held||held.pointer!==event.pointerId)return;if(!isEnabled()){finish(true);return;}
+  event.preventDefault();if(!held.moved&&Math.hypot(event.clientX-held.startX,event.clientY-held.startY)<6)return;
+  held.moved=true;actor.dataset.dragging='true';pose.x=held.x+event.clientX-held.startX;pose.y=held.y+event.clientY-held.startY;paint();
+ });
+ actor.addEventListener('pointerup',event=>{if(held?.pointer===event.pointerId)finish(!isEnabled());});
+ for(const type of ['pointercancel','lostpointercapture'])actor.addEventListener(type,event=>{if(held?.pointer===event.pointerId)finish(true);});
+ actor.addEventListener('click',event=>{if(event.detail===0&&!held&&isEnabled())onSelect();});
+ actor.addEventListener('keydown',event=>{
+  if(event.key==='Escape'&&held){event.preventDefault();finish(true);return;}
+  if(!isEnabled()||held||!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key))return;
+  event.preventDefault();const step=event.shiftKey?40:16;pose.x+=event.key==='ArrowRight'?step:event.key==='ArrowLeft'?-step:0;pose.y+=event.key==='ArrowDown'?step:event.key==='ArrowUp'?-step:0;delete pose.tx;delete pose.ty;pose.wait=1.2;paint();
+ });
+ return ()=>finish(true);
+}
+
+// Pure visual movement: no task, polling, or runtime operations.
+export function stepManagerWalk(pose,{width,height,actorWidth=84,actorHeight=120},elapsed,random=Math.random){
+ const left=12,top=36,right=Math.max(left,width-actorWidth-12),bottom=Math.max(top,height-actorHeight-12);
+ const clamp=(n,min,max)=>Math.max(min,Math.min(max,n));
+ pose.x=clamp(pose.x,left,right);pose.y=clamp(pose.y,top,bottom);
+ pose.walking=false;const dt=clamp(elapsed,0,.05);if(pose.paused)return pose;
+ if(pose.wait>0){pose.wait=Math.max(0,pose.wait-dt);return pose;}
+ if(pose.tx===undefined){pose.tx=left+random()*(right-left);pose.ty=top+random()*(bottom-top);}
+ pose.tx=clamp(pose.tx,left,right);pose.ty=clamp(pose.ty,top,bottom);
+ const dx=pose.tx-pose.x,dy=pose.ty-pose.y,distance=Math.hypot(dx,dy),step=52*dt;
+ if(distance<=Math.max(step,1)){pose.x=pose.tx;pose.y=pose.ty;delete pose.tx;delete pose.ty;pose.wait=1.5+random()*3;return pose;}
+ pose.x+=dx/distance*step;pose.y+=dy/distance*step;pose.walking=true;if(Math.abs(dx)>1)pose.facing=dx<0?'left':'right';return pose;
 }

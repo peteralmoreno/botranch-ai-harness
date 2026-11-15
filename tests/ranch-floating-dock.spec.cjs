@@ -19,7 +19,7 @@ async function setup(page) {
     window.dockOffline = false;
     window.dockInfo = { expanded: false, pinned: true, side: 'left', mode:'icue',length:'short' };
     window.dockData = {
-      pickupPaused: true, taskRevision:7,homeFolder:'D:/Bots',roles:[{id:'generalist',name:'Generalist'},{id:'pipeline',name:'Pipeline'}],
+      profileYards:true,pickupPaused: true, taskRevision:7,homeFolder:'D:/Bots',roles:[{id:'generalist',name:'Generalist'},{id:'pipeline',name:'Pipeline'}],
       profiles: [{ id: 'p1', revision:1, nickname: 'Brick', color: 0, state: 'ready', status: 'connected', label: 'Ready', active: true, workCheckSupported: true }, { id: 'p2', revision:1, nickname: 'Piper', color: 1, state: 'offline', status: 'closed', active: true, workCheckSupported: false }],
       tasks: [{ id: 't1', revision:3, instructions:'Review carefully', projectFolder:'D:/Bots', title: 'Review the renderer', status: 'review', assignedProfileId: 'p1', family: { name: 'Desktop', color: 'cyan' } }, { id: 't2',revision:4,instructions:'Build and verify',projectFolder:'D:/Bots', title: 'Ship installer', status: 'todo' }, { id: 't3', title: 'Archived work', status: 'done', archived: true }],
       updates: [{ id: 'u1', profileId: 'p1', taskId: 't1', text: '<img src=x onerror=alert(1)> Finished review', at: Date.now() }]
@@ -83,7 +83,7 @@ test('Factory edits saved bots, keeps drafts across polling and preserves the or
  await expect(page.getByLabel('Bot name',{exact:true})).toHaveValue('Brick');
  await expect(page.getByRole('combobox',{name:'Design',exact:true})).toHaveValue('pm');
  await expect(page.getByLabel('Read only',{exact:true})).toBeChecked();
- await page.getByLabel('Bot name',{exact:true}).fill('Brick revised');
+ await page.getByLabel('Bot name',{exact:true}).fill('Brick revised');await page.getByRole('combobox',{name:'Assigned yard',exact:true}).selectOption('pipeyard');
  await page.evaluate(()=>{window.dockData.profiles[0].revision=2;window.dockData.profiles[0].nickname='Changed elsewhere';});
  await expect(page.getByLabel('Bot to edit')).toContainText('Changed elsewhere');
  await expect(page.getByLabel('Bot name',{exact:true})).toHaveValue('Brick revised');
@@ -92,7 +92,7 @@ test('Factory edits saved bots, keeps drafts across polling and preserves the or
  await expect(page.getByRole('alert')).toContainText('Conflict');
  await expect(page.getByLabel('Bot name',{exact:true})).toHaveValue('Brick revised');
  const body=await page.evaluate(()=>window.dockCalls.find(c=>c.name==='profile-save').body);
- expect(body).toMatchObject({id:'p1',expectedRevision:1,nickname:'Brick revised',folder:'D:/Bots/Brick',role:'pipeline',design:'pm',color:31,readOnly:true,autoPickup:false,personality:'curious',instructionsPath:'D:/Bots/roles/brick.md'});
+ expect(body).toMatchObject({yard:'pipeyard',id:'p1',expectedRevision:1,nickname:'Brick revised',folder:'D:/Bots/Brick',role:'pipeline',design:'pm',color:31,readOnly:true,autoPickup:false,personality:'curious',instructionsPath:'D:/Bots/roles/brick.md'});
  expect(body).not.toHaveProperty('active');
  await page.getByRole('button',{name:'Reload saved profile',exact:true}).click();
  await expect(page.getByLabel('Bot name',{exact:true})).toHaveValue('Changed elsewhere');
@@ -367,4 +367,32 @@ test('Pipeyard preserves drafts across tabs and checks a due selection only once
 
 test('Factory saves the Designer appearance without changing the chosen role',async({page})=>{
  await setup(page);await page.getByRole('button',{name:'Factory',exact:true}).click();await page.getByLabel('Bot name',{exact:true}).fill('Matisse');await page.getByRole('combobox',{name:'Design',exact:true}).selectOption('designer');await page.getByRole('button',{name:'Create in Bank',exact:true}).click();await expect.poll(()=>page.evaluate(()=>window.dockCalls.some(c=>c.name==='factory'&&c.body.design==='designer'&&c.body.role==='generalist'))).toBe(true);
+});
+test('dock manager actions and handoffs stay in the compact Pipeyard panel',async({page})=>{
+ await setup(page);await page.getByRole('button',{name:'Pipeyard',exact:true}).click();await expect(page.getByRole('button',{name:'+ William',exact:true})).toHaveCount(0);await expect(page.getByRole('region',{name:'Pipeline managers',exact:true})).toHaveCount(0);
+ await page.evaluate(()=>{window.pipeyardData.managers=[{id:'william',nickname:'William',state:'offline',taskCount:0},{id:'willow',nickname:'Willow',state:'ready',taskCount:0}];window.pipeyardData.managerAccess='operate';});await page.getByRole('button',{name:'Refresh list',exact:true}).click();
+ await expect(page.getByRole('button',{name:'+ Manager',exact:true})).toHaveCount(0);await page.getByRole('button',{name:/Market report/}).click();await page.getByRole('combobox',{name:'Manager',exact:true}).selectOption('willow');await page.getByRole('button',{name:'Hand off run',exact:true}).click();await expect.poll(()=>page.evaluate(()=>window.dockCalls.some(c=>c.body?.action==='handoff'&&c.body.id==='run-1'&&c.body.managerId==='willow'))).toBe(true);
+ await expect(page.getByRole('button',{name:'Check yard',exact:true})).toHaveCount(0);
+ await page.evaluate(()=>window.pipeyardOffline=true);await page.getByRole('button',{name:'Refresh list',exact:true}).click();await expect(page.getByRole('button',{name:'Hand off run',exact:true})).toBeDisabled();
+});
+
+test('Factory suggests editable manager names and the standard Bank workflow keeps custom settings',async({page})=>{
+ await setup(page);await page.evaluate(()=>window.dockData.roles.push({id:'pipeyard-manager',name:'Pipeline Manager'}));await page.getByRole('button',{name:'Factory',exact:true}).click();
+ await expect(page.getByRole('combobox',{name:'Role',exact:true}).locator('option[value="pipeyard-manager"]')).toHaveCount(1);await page.getByRole('combobox',{name:'Role',exact:true}).selectOption('pipeyard-manager');await expect(page.getByLabel('Bot name')).toHaveValue('William');await expect(page.getByRole('combobox',{name:'Design',exact:true})).toHaveValue('farmer');
+ await page.getByLabel('Bot name').fill('Rowan');await page.getByRole('button',{name:'Mint',exact:true}).click();await page.getByRole('button',{name:'Create in Bank',exact:true}).click();expect(await page.evaluate(()=>window.dockCalls.find(c=>c.name==='factory').body)).toMatchObject({nickname:'Rowan',role:'pipeyard-manager',design:'farmer',color:13});
+ await page.evaluate(()=>window.dockData.profiles.push({id:'w',revision:1,nickname:'William',role:'pipeyard-manager',design:'farmer',active:false,state:'offline',status:'closed',color:7}));
+ await page.getByRole('button',{name:'Factory',exact:true}).click();await page.getByRole('combobox',{name:'Role',exact:true}).selectOption('pipeyard-manager');await expect(page.getByLabel('Bot name')).toHaveValue('Willow');await page.getByLabel('Bot name').fill('Harper');await page.getByRole('combobox',{name:'Role',exact:true}).selectOption('generalist');await page.getByRole('combobox',{name:'Role',exact:true}).selectOption('pipeyard-manager');await expect(page.getByLabel('Bot name')).toHaveValue('Harper');
+});
+
+test('Factory assigns either yard independently of role and saves the Bank destination',async({page})=>{
+ await setup(page);await page.getByRole('button',{name:'Factory',exact:true}).click();await page.getByLabel('Bot name').fill('Painter');
+ const yard=page.getByRole('combobox',{name:'Assigned yard',exact:true});await expect(yard).toHaveValue('ranch');await yard.selectOption('pipeyard');await page.getByRole('combobox',{name:'Role',exact:true}).selectOption('pipeline');await expect(yard).toHaveValue('pipeyard');
+ await page.getByRole('button',{name:'Create in Bank',exact:true}).click();expect(await page.evaluate(()=>window.dockCalls.find(c=>c.name==='factory').body)).toMatchObject({nickname:'Painter',role:'pipeline',yard:'pipeyard'});
+ await page.evaluate(()=>{window.dockData.profileYards=false;});await page.getByRole('button',{name:'Factory',exact:true}).click();await expect(yard).toBeDisabled();
+});
+
+test('dock History delete confirms the displayed record and never deletes on cancel',async({page})=>{
+ await setup(page);await page.evaluate(()=>{window.pipeyardData.runs[0].archived=true;window.pipeyardData.runs[0].updatedAt=123;});await page.getByRole('button',{name:'Pipeyard',exact:true}).click();await page.getByRole('button',{name:'History',exact:true}).click();await page.getByRole('button',{name:/Market report/}).click();
+ await page.getByRole('button',{name:'Delete from History',exact:true}).click();await page.getByRole('button',{name:'Cancel deletion',exact:true}).click();expect(await page.evaluate(()=>window.dockCalls.filter(c=>c.pipeyard==='action'&&c.body.action==='delete').length)).toBe(0);
+ await page.getByRole('button',{name:'Delete from History',exact:true}).click();await page.getByRole('button',{name:'Delete permanently',exact:true}).click();expect(await page.evaluate(()=>window.dockCalls.find(c=>c.pipeyard==='action'&&c.body.action==='delete').body)).toMatchObject({action:'delete',id:'run-1',confirmed:true,expectedUpdatedAt:123});
 });

@@ -15,7 +15,7 @@ test('six residents keep colors, expose overflow, and open a terminal only by ex
  // Selection semantics should not depend on catching a roaming, overlapping target.
  await page.locator('#motion').click();await page.locator('#motion-choice').selectOption('still');await page.locator('#motion-close').click();
  const selectedBot=page.locator('.bot[data-id="bot1"]');await expect(selectedBot).toHaveAttribute('data-walking','false');
- await selectedBot.dblclick();await expect(selectedBot).toHaveAttribute('aria-pressed','true');await page.waitForTimeout(500);expect(focused).toEqual([]);await page.getByRole('button',{name:'Open selected terminal'}).click();await expect.poll(()=>focused).toEqual(['bot1']);
+ await selectedBot.dblclick();await expect(selectedBot).toHaveAttribute('aria-pressed','true');await page.waitForTimeout(500);expect(focused).toEqual([]);await page.getByRole('button',{name:'Open session',exact:true}).click();await expect.poll(()=>focused).toEqual(['bot1']);
  await page.locator('#motion').click();await page.locator('#motion-choice').selectOption('lively');await page.locator('#motion-close').click();
  await page.reload();await expect(page.locator('.bot')).toHaveCount(6);
  expect(await page.locator('.bot').evaluateAll(bs=>bs.map(b=>[b.dataset.id,b.dataset.color]))).toEqual(ids);

@@ -15,12 +15,12 @@ export class Pipeyard {
   fs.mkdirSync(root,{recursive:true});this.configFile=path.join(root,'config.json');this.stateFile=path.join(root,'runs.json');
   this.config=fs.existsSync(this.configFile)?validateConfig(JSON.parse(fs.readFileSync(this.configFile,'utf8'))):{version:1,platforms:[],templates:[]};
   const state=fs.existsSync(this.stateFile)?JSON.parse(fs.readFileSync(this.stateFile,'utf8')):{version:1,runs:[]};if(state.version!==1||!Array.isArray(state.runs))throw Error('Unsupported Pipeyard state.');
-  this.runs=state.runs;this.boardAppearances=state.boardAppearances||{};
+  this.runs=state.runs;this.boardAppearances=state.boardAppearances||{};this.deletedRuns=state.deletedRuns||[];
   // A process may stop after a remote POST but before receiving its response. Never resubmit it.
   for(const run of this.runs)if(run.status==='submitting'){run.status='unresolved';run.tracking='paused';run.message='Submission was interrupted. Verify the platform and link the existing run.';}
  }
  write(file,value){fs.writeFileSync(file+'.tmp',JSON.stringify(value,null,2),{mode:0o600});fs.renameSync(file+'.tmp',file);}
- persist(){this.write(this.stateFile,{version:1,runs:this.runs,boardAppearances:this.boardAppearances});}
+ persist(){this.write(this.stateFile,{version:1,runs:this.runs,boardAppearances:this.boardAppearances,deletedRuns:this.deletedRuns});}
  configure(input){const config=validateConfig(input);this.write(this.configFile,config);this.config=config;return this.configuration();}
  configuration(){return {config:copy(this.config),configPath:this.configFile,example:copy(exampleConfig)};}
  reload(){if(this.busy)throw Error('Pipeyard is busy.');this.config=validateConfig(JSON.parse(fs.readFileSync(this.configFile,'utf8')));return this.configuration();}
@@ -111,14 +111,23 @@ export class Pipeyard {
  setBoardAppearance(body){validateAction('set-appearance',body);if(!body.id.startsWith('board-'))throw Error('Expected a Board pipeline.');const {id,...appearance}=body;this.boardAppearances[id]={...(this.boardAppearances[id]||{}),...appearance};this.persist();return copy(this.boardAppearances[id]);}
  async execute(action,body){
   validateAction(action,body);
+  if(['launch','create-local'].includes(action)&&this.deletedRuns.some(r=>r.requestHash===fingerprint(body.requestId)))throw Error('This request was deleted from local History. Track the existing external run; use a new request ID only for new work.');
   if(action==='create-local')return this.createLocal(body);
   if(action==='save-template')return this.saveTemplate(body.template);
   if(action==='launch'||action==='register')return this.create(action,body);
-  const run=this.runs.find(r=>r.id===body.id);if(!run)throw Error('Unknown Pipeyard run.');
+  const run=this.runs.find(r=>r.id===body.id);if(!run){if(action==='delete'&&this.deletedRuns.some(r=>r.idHash===fingerprint(body.id)))return {id:body.id,deleted:true};throw Error('Unknown Pipeyard run.');}
   if(action==='check-due'&&(this.locks.has(run.id)||!this.checkDue(run)))return this.publicRun(run);
   if(this.locks.has(run.id))throw Error('Run is busy; retry after the current check.');
   this.locks.add(run.id);
   try{
+   if(action==='delete'){
+    if(!run.archived)throw Error('Clear the pipeline to History before deleting it.');
+    if(run.updatedAt!==body.expectedUpdatedAt)throw Object.assign(Error('The pipeline changed. Reload its History entry before deleting.'),{status:409});
+    const previousRuns=this.runs,previousDeleted=this.deletedRuns;
+    this.deletedRuns=[...this.deletedRuns,{idHash:fingerprint(run.id),...(run.requestId?{requestHash:fingerprint(run.requestId)}:{})}];this.runs=this.runs.filter(r=>r.id!==run.id);
+    try{this.persist();}catch(error){this.runs=previousRuns;this.deletedRuns=previousDeleted;throw error;}
+    return {id:run.id,deleted:true};
+   }
    if(action==='connect-local')await this.connectLocal(run,body);
    else if(action==='set-appearance'){if(body.color!==undefined)run.color=body.color;if(body.shape!==undefined)run.shape=body.shape;}
    else if(action==='update-run')await this.updateRun(run,body);
