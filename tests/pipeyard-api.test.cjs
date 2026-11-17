@@ -1,4 +1,15 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path');
+test('agents read compact Ranch/Pipeyard feeds with authentication, cursors and hidden response privacy',()=>fixture(async({request,manager})=>{
+ const {Pipeyard}=await import('../sources/omp-bot-companion/pipeyard.mjs');let calls=0;
+ const store=new Pipeyard({root:path.join(manager.library.root,'pipeyard'),fetchImpl:async()=>{calls++;return new Response(JSON.stringify({id:'remote',status:'running',message:'HIDDEN_SENTINEL',result:{private:'RAW_SENTINEL'}}));}});
+ store.configure({version:1,platforms:[{id:'example',name:'Example',baseUrl:'https://example.test',operations:{status:{method:'GET',path:'/runs/{runId}'}},responses:{status:{desk:{mode:'hidden'}},progress:{desk:{mode:'hidden'}}}}],templates:[{id:'report',name:'Report',platformId:'example',color:'#61b7ba'}]});
+ await store.execute('register',{templateId:'report',externalId:'remote'});
+ manager.updates.items.push({id:'tweet',at:Date.now(),profileId:'brick',text:'Just finished a task.',kind:'complete'});
+ assert.equal((await request('/admin/ai/feed',null,'wrong')).status,401);
+ assert.equal((await request('/admin/ai/feed',{scope:'all'})).status,405);
+ for(const scope of ['ranch','pipeyard','all']){const result=await request('/admin/ai/feed?scope='+scope);assert.equal(result.status,200);const data=await result.json();assert(data.items.length);assert(!/HIDDEN_SENTINEL|RAW_SENTINEL|responses|adapter/.test(JSON.stringify(data)));assert.equal((await (await request('/admin/ai/feed?scope='+scope+'&after='+data.nextCursor)).json()).items.length,0);}
+ assert.equal(calls,1);assert.equal((await request('/admin/ai/feed?limit=101')).status,400);assert.equal((await request('/admin/ai/feed?scope=no')).status,400);
+}));
 test('yard animals persist under home, require authentication and reject stale saves',()=>fixture(async({request,manager})=>{
  assert.equal((await request('/control/pipeyard/creatures',null,'wrong')).status,401);
  const response=await request('/control/pipeyard/creatures',null,'a'.repeat(64));assert.equal(response.status,200);
@@ -13,6 +24,10 @@ test('yard animals persist under home, require authentication and reject stale s
 }));
 async function fixture(fn){const {RanchManager}=await import('../sources/omp-bot-companion/manager.mjs'),{createBridge}=await import('../sources/omp-bot-companion/server.mjs');const dir=fs.mkdtempSync(path.join(os.tmpdir(),'pipeyard-api-')),manager=new RanchManager({dir,native:{}});const server=createBridge({key:'a'.repeat(64),adminKey:'b'.repeat(64),manager});await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port;const request=(route,body,key='b'.repeat(64))=>fetch(origin+route,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});try{await fn({manager,request,origin,dir});}finally{server.closeAllConnections();await new Promise(r=>server.close(r));}}
 test('Pipeyard API requires admin authentication, enforces agent modes and excludes config from agents',()=>fixture(async({request,manager})=>{
+ assert.equal((await request('/admin/pipeyard/storage',null,'wrong')).status,401);
+ assert.equal((await request('/admin/pipeyard/storage',{folder:'relative',expectedFolder:'stale'},'wrong')).status,401);
+ assert.equal((await request('/control/pipeyard/storage',null,'a'.repeat(64))).status,404);
+ assert.equal((await request('/admin/ai/pipeyard/storage',{folder:'relative'})).status,404);
  assert.equal((await request('/admin/pipeyard/snapshot',null,'wrong')).status,401);
  assert.equal((await request('/admin/ai/pipeyard/catalog')).status,200);
  const estimate={action:'estimate-progress',id:'missing',percent:45,reason:'Stage two',author:'Scout'};
@@ -75,7 +90,7 @@ test('template and connection APIs expose limits, enforce Operate, and do not ex
  const config={version:1,platforms:[{id:'one',name:'One',baseUrl:'https://example.test',operations:{status:{method:'GET',path:'/runs/{runId}'}}}],templates:[]};await request('/admin/pipeyard/config',config);
  const body={action:'save-template',template:{id:'report',name:'Report',platformId:'one',color:'#b51f43'}};
  assert.equal((await request('/admin/ai/pipeyard/action',body)).status,403);manager.setAiAccess('organize');assert.equal((await request('/admin/ai/pipeyard/action',body)).status,403);manager.setAiAccess('operate');const created=await request('/admin/ai/pipeyard/action',body);assert.equal(created.status,200);assert.equal((await created.json()).id,'report');
- const snapshot=await (await request('/admin/ai/pipeyard/snapshot')).json();assert.equal(snapshot.limits.demo.visibleRuns,6);assert.equal(snapshot.usage.templates,1);assert.equal(snapshot.limits.live.runCount,null);assert(!JSON.stringify(snapshot).includes('credential'));
+ const snapshot=await (await request('/admin/ai/pipeyard/snapshot')).json();assert.equal(snapshot.limits.demo.visibleRuns,8);assert.equal(snapshot.usage.templates,1);assert.equal(snapshot.limits.live.runCount,null);assert(!JSON.stringify(snapshot).includes('credential'));
  const large=await request('/admin/ai/pipeyard/action',{action:'update-run',id:'none',metadata:{x:'x'.repeat(32768)}});assert.equal(large.status,400);const error=await large.json();assert.equal(error.code,'PIPEYARD_LIMIT');assert.equal(error.limit.max,32768);
  assert.equal((await request('/control/pipeyard/action',body,'a'.repeat(64))).status,403);
 }));
@@ -131,4 +146,28 @@ test('Open session requires an authenticated active bot and cannot accept restar
   assert.equal((await request(route,{id:active.id},key)).status,200);
  }
  assert.deepEqual(calls,[{id:active.id,action:'resume'},{id:active.id,action:'resume'}]);
+}));
+
+test('HTTP projections, actions, manager handoffs and preview never expose hidden or unselected response sentinels',()=>fixture(async({request,manager,origin})=>{
+ const http=require('node:http'),remote=http.createServer((req,res)=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify(req.url.endsWith('/progress')?{progress:0,message:'PROGRESS_SENTINEL',result:{private:'RESULT_SENTINEL'},visible:'Shown',other:['UNSELECTED_SENTINEL']}:{id:'remote',status:'running',message:'STATUS_SENTINEL',progress:{stage:'STAGE_SENTINEL',current_index:8,total:8},cost_usd:0}));});await new Promise(r=>remote.listen(0,'127.0.0.1',r));
+ try{
+  const config={version:1,platforms:[{id:'neutral',name:'Neutral',baseUrl:'http://127.0.0.1:'+remote.address().port,operations:{status:{method:'GET',path:'/runs/{runId}'},progress:{method:'GET',path:'/runs/{runId}/progress'}},responses:{status:{desk:{mode:'hidden'}},progress:{desk:{mode:'custom',fields:[{label:'Selected',path:'visible'}]}}}}],templates:[{id:'one',name:'One',platformId:'neutral',color:'#61b7ba'}]};
+  assert.equal((await request('/admin/pipeyard/config',config)).status,200);
+  const run=await(await request('/admin/pipeyard/action',{action:'register',templateId:'one',externalId:'remote'})).json();
+  const checked=await(await request('/admin/pipeyard/action',{action:'refresh',id:run.id})).json();assert.equal(checked.responses.progress.fields[0].value,'Shown');assert.equal(checked.costUsd,0);
+  const bot=await(await request('/admin/pipeyard/action',{action:'create-manager'})).json();assert.equal((await request('/admin/pipeyard/action',{action:'handoff',id:run.id,managerId:bot.id})).status,200);assert.doesNotMatch(JSON.stringify(manager.tasks),/SENTINEL/);
+  manager.tasks[0].resultSummary='STATUS_SENTINEL';
+  for(const [route,key] of [['/admin/pipeyard/snapshot','b'],['/admin/ai/pipeyard/snapshot','b'],['/control/pipeyard/snapshot','a']]){const response=await request(route,null,key.repeat(64));assert.equal(response.status,200);assert.doesNotMatch(await response.text(),/SENTINEL/);}
+  assert.doesNotMatch(JSON.stringify(checked),/SENTINEL/);
+  const client=require('../sources/omp-bot-desktop/main.cjs').createCompanionClient({origin,adminKey:'b'.repeat(64),pairingKey:'a'.repeat(64)});const ipc=await client.pipeyard('snapshot');assert.equal(ipc.ok,true);assert.doesNotMatch(JSON.stringify(ipc),/SENTINEL/);
+  const raw=JSON.parse(fs.readFileSync(path.join(manager.library.root,'pipeyard','runs.json'))).runs[0];assert.match(JSON.stringify(raw.responses),/SENTINEL/);
+  assert.equal((await request('/admin/pipeyard/action',{action:'review-progress',id:run.id,source:'status',responseId:raw.responses.status.id,author:'Reader',summary:'Anything'})).status,400);
+  const preview=await(await request('/admin/pipeyard/preview',{config,templateId:'one',source:'status',sample:{message:'STATUS_SENTINEL'}})).json();assert.equal(preview.preview,null);
+  const custom=await(await request('/admin/pipeyard/preview',{config,templateId:'one',source:'progress',sample:{visible:'Shown',private:'UNSELECTED_SENTINEL'}})).json();assert.equal(custom.preview.fields[0].value,'Shown');assert.doesNotMatch(JSON.stringify(custom),/SENTINEL/);assert.equal((await request('/admin/ai/pipeyard/preview',{config,templateId:'one',source:'status',sample:{}})).status,404);
+ }finally{remote.closeAllConnections();await new Promise(r=>remote.close(r));}
+}));
+test('polling edits require Operate, accept paired controls and reject Board-owned runs or extra fields',()=>fixture(async({request,manager})=>{
+ const run=await(await request('/admin/pipeyard/action',{action:'create-local',requestId:'cadence',title:'Local',color:'#61b7ba'})).json(),body={action:'set-check-interval',id:run.id,intervalMinutes:.5};
+ assert.equal((await request('/admin/ai/pipeyard/action',body)).status,403);manager.setAiAccess('organize');assert.equal((await request('/admin/ai/pipeyard/action',body)).status,403);manager.setAiAccess('operate');assert.equal((await request('/admin/ai/pipeyard/action',body)).status,200);
+ assert.equal((await request('/control/pipeyard/action',{...body,intervalMinutes:15},'a'.repeat(64))).status,200);assert.equal((await request('/control/pipeyard/action',{...body,minutes:120},'a'.repeat(64))).status,400);assert.equal((await request('/admin/pipeyard/action',{...body,id:'board-existing'})).status,400);
 }));

@@ -1,6 +1,6 @@
 {
   "name": "botranch-ai-harness",
-  "version": "1.1.5",
+  "version": "1.1.10",
   "private": true,
   "scripts": {
     "postinstall": "node node_modules/electron/install.js",
@@ -19,6 +19,7 @@
     "test": "node --test --test-concurrency=1 tests/*.test.cjs && npm run test:ranch-native && playwright test",
     "test:unit": "node --test --test-concurrency=1 tests/*.test.cjs",
     "test:browser": "playwright test",
+    "test:desktop:packaged": "playwright test --config=playwright.electron.config.cjs",
     "test:build": "node --test tests/build.test.cjs",
     "test:ranch-native": "node --test sources/omp-bot-companion/tests/setup-colors.test.mjs && powershell.exe -NoProfile -NonInteractive -File sources/omp-bot-companion/tests/terminal-arguments.test.ps1"
   },

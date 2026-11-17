@@ -53,15 +53,49 @@ Agents can register a run and then submit `{"action":"handoff","id":"LOCAL_RUN_I
 
 ## Platform configuration
 
-Use **Configure platforms**. Configuration is `<bot-home>/pipeyard/config.json`; runs and notes are in `runs.json`. Empty configuration sends no requests. Adapters define a base URL, request paths, response-field mappings, and templates. The editor supplies a generic example; adapt it to your service before saving.
+Use **Configure platforms**. By default, configuration is `<bot-home>/pipeyard/config.json`; active pipelines, History, notes and saved responses share `runs.json` (JSON, not CSV). Choose **Settings â†’ Home & folders â†’ Pipeyard storage** to copy them into another empty, absolute folder. The companion uses the new location immediately and retains the old files as a backup. A check/action must finish before the switch. The custom location persists across restarts and bot-home changes; animals and Board-owned tasks stay in bot home. Demo records remain browser-local. The companion stores the location pointer in its private `pipeyard-storage.json`. Empty configuration sends no requests. Adapters define a base URL, request paths, response-field mappings, and templates. The editor supplies a generic example; adapt it to your service before saving.
 
 `status` is required; `trigger`, `progress`, `say`, `approve`, `pause`, and `resume` are optional. Reads use GET, mutations POST. Paths remain on the configured origin, `{runId}` is encoded, and dotted field mappings read JSON. Whole-value placeholders such as `{{input}}`, `{{runId}}`, `{{message}}`, and `{{decision}}` are data substitution, not scripts. Unmapped statuses remain unknown.
 
 Credentials are references: `{"credential":{"env":"PIPEYARD_API_TOKEN"}}` or `{"credential":{"file":"C:\\private\\token.txt"}}`. Keep the token outside source/task data. Environment changes need a safe restart; credential files are reread. Credentialed requests require HTTPS except loopback, do not follow redirects, and have bounded response sizes/timeouts.
 
+## Response mapping and display
+
+Each platform can configure `responses.status` and `responses.progress` independently. Templates may override either endpoint: mapping keys merge, explicit `null` disables a mapping, and an overridden `desk` replaces the whole display definition. The resulting settings are frozen into each new run. Saving configuration changes future runs only; it does not hide or erase content already exposed by an existing run.
+
+Add a fragment like this to a platform or template (paths must match your service):
+
+```json
+{
+  "responses": {
+    "status": {
+      "mappings": {"status":"run.state", "stagePosition":"progress", "cost":null},
+      "desk": {"mode":"custom", "fields":[
+        {"label":"Phase", "path":"progress.stage", "format":"title"},
+        {"label":"Message", "path":"run.summary", "fallback":"No message"}
+      ]}
+    },
+    "progress": {
+      "mappings": {"progress":"execution.percent"},
+      "desk": {"mode":"hidden"}
+    }
+  }
+}
+```
+
+`raw` shows bounded, sanitized JSON; `custom` shows only selected fields; `hidden` sends no body or review to either UI or public/agent snapshots. Operational facts such as lifecycle, counters, percentage, timing and approval cost remain available. Formats are `text`, `number`, `percent`, `title`, and `json`; zero and false are values, while missing/null fields use the literal fallback or an em dash. Invalid format/type combinations show a field diagnostic. Preview each endpoint with sanitized sample JSON in Configure platforms. Preview does not save settings or contact the service.
+
+Status owns lifecycle and identity. Progress may add details but cannot mark a run complete by its percentage or stage count. A conventional `progress: {"stage":"validation","current_index":8,"total":8}` means **Stage 8 of 8 — Validation**, even while status remains running. A missing index stays unknown. Only normalized `succeeded` confirms completion.
+
+For a service without quotes, explicitly set `"cost": null`. A cost-reporting service may use `"cost":"billing.total_usd"` in status mappings. Numeric zero is a valid quote; absent/invalid costs are **Not reported**. Legacy `cost_usd` mappings remain supported. Approval always rechecks current status and cost and requires renewed confirmation if either changes or cannot be verified, regardless of display mode.
+
+Sanitized status and progress responses are stored independently. An unchanged response retains its review ID; changed content invalidates that endpoint's review. A failed read preserves the last success and shows a separate last-attempt error. First load backs up legacy state as `runs.json.pre-responses-v1.bak` before migrating the old single response. No remote request is made by migration. Keep a backup before downgrading: version rollback does not undo this state change, and older clients cannot be assumed to enforce the new display rules. Hidden is a presentation/privacy boundary, not secure erasure of previously viewed or manually copied data.
+
 ## Monitoring and uncertainty
 
-Default checks run every five minutes for one hour. Intervals: 1/5/10/30 minutes. Budgets: 10/20/40/60/120 minutes. The companion must remain running. Expiry or **Pause tracking** stops local checks only; **Resume tracking** grants a new budget. Workflow pause is a separate platform state. Errors preserve last-known information and honor retry delays.
+New templates and placeholders default to checks every one minute for one hour. Existing saved cadence is retained, including the former five-minute default. **Check frequency** offers 30 seconds or 1/2/3/5/10/15/30 minutes. Budgets: 10/20/40/60/120 minutes. The companion must remain running. Expiry or **Pause tracking** stops local checks only; **Resume tracking** grants a new budget. Workflow pause is a separate platform state. Errors preserve last-known information and honor retry delays.
+
+Changing a run's frequency changes only that run's local schedule. It does not launch work, reset the monitoring deadline or resume paused/expired tracking. The next eligible check is based on the last completed check and the new interval, never before a provider's Retry-After boundary. If a check is in flight, retry the edit after it finishes. Last check, next check, retry boundary and deadline are separate facts. The browser's live-view refresh is not the external polling interval.
 
 Launch uses a stable `requestId`/idempotency key. If a response is lost, find and link the original external run; do not submit again blindly. Providers must honor idempotency for remote deduplication. Local notes never send messages to the platform. Explicit external approvals/messages can have platform effects or costs.
 
@@ -69,4 +103,12 @@ Launch uses a stable `requestId`/idempotency key. If a response is lost, find an
 
 Use `pipeyard catalog --json`, `pipeyard snapshot --json`, and `pipeyard action --file request.json`. Exact schemas, access levels, and limits are returned by the catalog. See [agent recipes](pipeyard-agent-connections.md).
 
-Demo mode uses six simulated runs and separate browser-local animal state. It makes no platform calls. Reset restores examples; Exit returns to live data. Live creatures save locally with revision checks. New animals arrive hungry; they eat at 25% fullness or below and leave hay when full. Add, name, recolor, drag, or remove animals from Animal Desk.
+Demo mode starts with six active examples and forty History entries, and allows eight occupied pipes. History samples include completed, failed, cancelled, paused, waiting and running workflows with local notes. Older saved previews gain the samples once, up to the fifty-record demo limit; Reset demo restores the full sample set. Its animal state is separate and browser-local. It makes no platform calls. Reset restores examples; Exit returns to live data. Live creatures save locally with revision checks. New animals arrive hungry; they eat at 25% fullness or below and leave hay when full. Add, name, recolor, drag, or remove animals from Animal Desk.
+
+### Ticket and pipeline links
+
+In **Edit connection**, add a **Ticket / Jira URL** and/or **Pipeline page URL**. Both are optional; clear a field to remove it. Use plain HTTP(S) page links without credentials. Click the saved link in the desk or compact sidebar to open your browser. Saving or reading links does not contact the external platform. Agents can set `ticketUrl` and `pipelineUrl` through create/register/launch/update-run and read brief activity with `feed --scope pipeyard --limit 20 --json`; see the [API guide](bot-ranch-api.md#recent-activity-and-run-links) for cursors.
+
+### Browsing History
+
+History is a scrollable list of cleared pipelines, without the pasture or animals. Use **Most recent** to choose 10, 20, 40, 60 or 100 entries (default 20). The view remembers the choice in browser storage; **Show more** uses the same batch size. Search by name, template or ID, or filter by status and template. Filters search all retained records. Select an entry for its saved results, notes, links, Restore, or Delete from History. Viewing History does not discard older records.

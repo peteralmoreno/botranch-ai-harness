@@ -1,0 +1,43 @@
+const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path');
+async function fixture(){const {Pipeyard}=await import('../sources/omp-bot-companion/pipeyard.mjs');let time=0,calls=0,delay=null,retry=null;const root=fs.mkdtempSync(path.join(os.tmpdir(),'polling-'));const yard=new Pipeyard({root,now:()=>time,fetchImpl:async()=>{calls++;if(delay)await delay;if(retry)return new Response('{}',{status:429,headers:{'Retry-After':retry}});return Response.json({id:'external',status:'running'});}});yard.configure({version:1,platforms:[{id:'generic',name:'Generic',baseUrl:'https://example.test',operations:{status:{method:'GET',path:'/runs/{runId}'}}}],templates:[{id:'one',name:'One',platformId:'generic',color:'#61b7ba',intervalMinutes:5}]});const run=await yard.execute('register',{templateId:'one',externalId:'external'});return {yard,id:run.id,root,time:n=>time=n,get calls(){return calls},block:p=>delay=p,retry:v=>retry=v};}
+test('frequency edits anchor at last check, persist, and preserve deadlines and all other runs',async()=>{const f=await fixture(),before=f.yard.runs[0].deadline;f.time(20000);const r=await f.yard.execute('set-check-interval',{id:f.id,intervalMinutes:1});assert.equal(r.nextCheckAt,60000);assert.equal(r.deadline,before);assert.equal(f.calls,1);f.time(60000);await f.yard.tick();assert.equal(f.calls,2);assert.equal(f.yard.runs[0].nextCheckAt,120000);const {Pipeyard}=await import('../sources/omp-bot-companion/pipeyard.mjs');assert.equal(new Pipeyard({root:f.root}).runs[0].intervalMinutes,1);assert.equal(f.yard.config.templates[0].intervalMinutes,5);});
+test('all intervals validate and paused/no-op edits never resume or create events',async()=>{const f=await fixture();await f.yard.execute('pause-tracking',{id:f.id});for(const intervalMinutes of [.5,1,2,3,5,10,15,30]){const r=await f.yard.execute('set-check-interval',{id:f.id,intervalMinutes});assert.equal(r.tracking,'paused');assert.equal(r.nextCheckAt,null);}const events=f.yard.runs[0].events.length;await f.yard.execute('set-check-interval',{id:f.id,intervalMinutes:30});assert.equal(f.yard.runs[0].events.length,events);for(const intervalMinutes of ['1',0,-1,1.5,Infinity])await assert.rejects(()=>f.yard.execute('set-check-interval',{id:f.id,intervalMinutes}));});
+test('retry boundary wins; busy edits reject recoverably and failed persistence rolls back',async()=>{const f=await fixture();f.retry('180');await f.yard.execute('refresh',{id:f.id});const r=await f.yard.execute('set-check-interval',{id:f.id,intervalMinutes:.5});assert.equal(r.nextCheckAt,180000);f.yard.locks.add(f.id);await assert.rejects(()=>f.yard.execute('set-check-interval',{id:f.id,intervalMinutes:1}),/busy/i);f.yard.locks.clear();const previous=f.yard.runs[0].intervalMinutes;f.yard.persist=()=>{throw Error('disk unavailable')};await assert.rejects(()=>f.yard.execute('set-check-interval',{id:f.id,intervalMinutes:2}),/disk/);assert.equal(f.yard.runs[0].intervalMinutes,previous);});
+test('new defaults are one minute while stored configs missing cadence retain five',async()=>{const {validateConfig}=await import('../sources/omp-bot-companion/pipeyard-adapter.mjs');const f=await fixture(),config=f.yard.config;delete config.templates[0].intervalMinutes;assert.equal(validateConfig(config).templates[0].intervalMinutes,1);fs.writeFileSync(path.join(f.root,'config.json'),JSON.stringify(config));const {Pipeyard}=await import('../sources/omp-bot-companion/pipeyard.mjs');assert.equal(new Pipeyard({root:f.root}).config.templates[0].intervalMinutes,5);});
+
+test('automatic checks revalidate deadline before progress while manual checks never extend it',async()=>{const {Pipeyard}=await import('../sources/omp-bot-companion/pipeyard.mjs');let time=0,calls=[];const yard=new Pipeyard({root:fs.mkdtempSync(path.join(os.tmpdir(),'deadline-')),now:()=>time,fetchImpl:async url=>{calls.push(url);if(calls.length>1)time=600001;return Response.json({id:'remote',status:'running'});}});yard.configure({version:1,platforms:[{id:'generic',name:'Generic',baseUrl:'https://example.test',operations:{status:{method:'GET',path:'/runs/{runId}'},progress:{method:'GET',path:'/runs/{runId}/progress'}}}],templates:[{id:'one',name:'One',platformId:'generic',color:'#61b7ba',intervalMinutes:1,waitMinutes:10}]});const r=await yard.execute('register',{templateId:'one',externalId:'remote'});time=60000;await yard.tick();assert.equal(calls.length,2);assert.equal(yard.runs[0].tracking,'expired');assert.equal(yard.runs[0].deadline,r.deadline);});
+
+test('successful Retry-After also delays the progress request and later edits',async()=>{const {Pipeyard}=await import('../sources/omp-bot-companion/pipeyard.mjs');let time=0,calls=[];const yard=new Pipeyard({root:fs.mkdtempSync(path.join(os.tmpdir(),'success-retry-')),now:()=>time,fetchImpl:async url=>{calls.push(url);return new Response(JSON.stringify({id:'remote',status:'running'}),{headers:{'Retry-After':'180'}});}});yard.configure({version:1,platforms:[{id:'generic',name:'Generic',baseUrl:'https://example.test',operations:{status:{method:'GET',path:'/runs/{runId}'},progress:{method:'GET',path:'/runs/{runId}/progress'}}}],templates:[{id:'one',name:'One',platformId:'generic',color:'#61b7ba',intervalMinutes:1}]});const r=await yard.execute('register',{templateId:'one',externalId:'remote'});assert.equal(r.retryAt,180000);time=180000;await yard.execute('refresh',{id:r.id});assert.equal(calls.length,2);assert.equal(yard.runs[0].nextCheckAt,360000);});
+
+test('HTTP-date Retry-After survives edits and invalid retry values use bounded failure backoff',async()=>{const f=await fixture();f.time(100000);f.retry(new Date(500000).toUTCString());await f.yard.execute('refresh',{id:f.id});await f.yard.execute('set-check-interval',{id:f.id,intervalMinutes:.5});assert.equal(f.yard.runs[0].nextCheckAt,500000);f.time(500000);f.retry('not a date');await f.yard.execute('refresh',{id:f.id});assert(f.yard.runs[0].nextCheckAt>500000);});
+
+
+test('a real in-flight check excludes duplicate reads and cadence edits, then the accepted edit survives restart',async()=>{
+ const f=await fixture();let release;f.block(new Promise(resolve=>release=resolve));f.time(300000);const tick=f.yard.tick();
+ assert.equal(f.calls,2);await f.yard.execute('check-due',{id:f.id});assert.equal(f.calls,2);
+ await assert.rejects(()=>f.yard.execute('refresh',{id:f.id}),error=>error.code==='PIPEYARD_BUSY');
+ await assert.rejects(()=>f.yard.execute('set-check-interval',{id:f.id,intervalMinutes:.5}),error=>error.code==='PIPEYARD_BUSY');
+ release();await tick;f.block(null);f.time(340000);
+ const edited=await f.yard.execute('set-check-interval',{id:f.id,intervalMinutes:.5});assert.equal(edited.nextCheckAt,340000);
+ await Promise.all([f.yard.tick(),f.yard.tick()]);assert.equal(f.calls,3);assert.equal(f.yard.runs[0].nextCheckAt,370000);
+ const longer=await f.yard.execute('set-check-interval',{id:f.id,intervalMinutes:15});assert.equal(longer.nextCheckAt,1240000);
+ const {Pipeyard}=await import('../sources/omp-bot-companion/pipeyard.mjs');const restored=new Pipeyard({root:f.root});
+ assert.equal(restored.runs[0].intervalMinutes,15);assert.equal(restored.runs[0].nextCheckAt,1240000);assert.equal(restored.runs[0].deadline,3600000);
+});
+
+
+test('approval honors a fresh retry boundary from either read endpoint without posting',async()=>{
+ const {Pipeyard}=await import('../sources/omp-bot-companion/pipeyard.mjs');
+ for(const source of ['status','progress']){
+  let impose=false,posts=0;
+  const yard=new Pipeyard({root:fs.mkdtempSync(path.join(os.tmpdir(),'approval-delay-')),now:()=>1000,fetchImpl:async(url,options)=>{
+   if(options.method==='POST')posts++;
+   const endpoint=url.endsWith('/progress')?'progress':'status';
+   return Response.json({id:'remote',status:'awaiting-approval',cost_usd:5},{headers:impose&&endpoint===source?{'Retry-After':'60'}:{}});
+  }});
+  yard.configure({version:1,platforms:[{id:'generic',name:'Generic',baseUrl:'https://example.test',operations:{status:{method:'GET',path:'/runs/{runId}'},progress:{method:'GET',path:'/runs/{runId}/progress'},approve:{method:'POST',path:'/runs/{runId}/approve'}}}],templates:[{id:'one',name:'One',platformId:'generic',color:'#61b7ba'}]});
+  const r=await yard.execute('register',{templateId:'one',externalId:'remote'});impose=true;
+  await assert.rejects(()=>yard.execute('approve',{id:r.id,confirmed:true,expectedCostUsd:5}),/wait before another request/);
+  assert.equal(posts,0);assert.equal(yard.runs[0].retryAt,61000);assert(!yard.runs[0].events.some(e=>e.message==='Requested platform approve.'));
+ }
+});

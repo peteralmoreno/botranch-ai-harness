@@ -7,8 +7,11 @@ test('desktop staging produces an offline bundle and installer copies only liste
  const temporary=fs.mkdtempSync(path.join(os.tmpdir(),'ranch-desktop-build-'));
  try {
   const output=path.join(temporary,'release');
-  stageRanch(path.join(__dirname,'../sources'),output,{desktop:true,runtime:false});
+  stageRanch(path.join(__dirname,'../sources'),output,{desktop:true,runtime:true});
   const release=JSON.parse(fs.readFileSync(path.join(output,'release.json'),'utf8'));
+  assert.equal(release.desktop?.runtime,true);
+  assert.equal(Object.keys(release.hashes||{}).length,release.files.length);
+  assert.equal(release.hashes['desktop/resources/app/renderer.js'],require('node:crypto').createHash('sha256').update(fs.readFileSync(path.join(output,'desktop/resources/app/renderer.js'))).digest('hex'));
   for(const name of ['setup/pipeyard-demo.mjs','pipeyard.mjs','pipeyard-adapter.mjs','pipeyard-api.mjs','pipeyard-catalog.mjs','setup/pipeyard.html','setup/pipeyard.js','setup/pipeyard.css','guides/bot-ranch-pipeyard.md'])assert.ok(release.files.includes(name),'Pipeyard release input: '+name);
   for(const name of ['main.cjs','preload.cjs','window-policy.cjs','renderer.js','recovery.js','ai-sync.js','recovery.html','ai-sync.html','index.html','dock.css','icon.png','icon.ico','THIRD-PARTY-NOTICES.txt'])assert.ok(release.files.includes('desktop/resources/app/'+name),name);
   const bundle=fs.readFileSync(path.join(output,'desktop/resources/app/renderer.js'),'utf8');
@@ -22,6 +25,14 @@ test('desktop staging produces an offline bundle and installer copies only liste
   assert.ok(fs.existsSync(path.join(installed,'botRanch-cli.cmd')));assert.match(fs.readFileSync(path.join(installed,'launcher-cli.mjs'),'utf8'),/ranch-cli\.mjs/);
   assert.ok(release.files.includes('agent-api.mjs'));assert.ok(release.files.includes('agent-catalog.json'));assert.ok(release.files.includes('ranch-cli.mjs'));assert.ok(release.files.includes('pickup-policy.mjs'));
  } finally {fs.rmSync(temporary,{recursive:true,force:true});}
+});
+test('desktop staging rejects a dirty output directory before copying anything',()=>{
+ const {stageDesktop}=require('../tools/build-desktop.cjs');const temporary=fs.mkdtempSync(path.join(os.tmpdir(),'ranch-dirty-'));
+ try{fs.writeFileSync(path.join(temporary,'unexpected.txt'),'preserve');assert.throws(()=>stageDesktop(path.join(__dirname,'../sources'),temporary,{runtime:false}),/empty|fresh/i);assert.equal(fs.readFileSync(path.join(temporary,'unexpected.txt'),'utf8'),'preserve');}finally{fs.rmSync(temporary,{recursive:true,force:true});}
+});
+test('desktop staging rejects source package version drift instead of silently rewriting it',()=>{
+ const {stageDesktop}=require('../tools/build-desktop.cjs');const temporary=fs.mkdtempSync(path.join(os.tmpdir(),'ranch-version-'));
+ try{const source=path.join(temporary,'source');fs.mkdirSync(path.join(source,'omp-bot-desktop'),{recursive:true});fs.mkdirSync(path.join(source,'omp-bot'));fs.writeFileSync(path.join(source,'omp-bot-desktop/package.json'),JSON.stringify({version:'99.0.0'}));fs.writeFileSync(path.join(source,'omp-bot/manifest.json'),JSON.stringify({version:'1.1.5'}));assert.throws(()=>stageDesktop(source,path.join(temporary,'out'),{runtime:false}),/Desktop versions must match/);}finally{fs.rmSync(temporary,{recursive:true,force:true});}
 });
 test('desktop launch selects bundled executable with browser fallback for source/older releases',async()=>{
  const {launchCommand}=await import('../sources/omp-bot-companion/open-desktop.mjs');

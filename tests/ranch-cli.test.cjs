@@ -1,4 +1,11 @@
 const {test}=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),http=require('node:http');
+test('CLI feed passes scoped incremental reads without leaking credentials or allowing write options',async()=>{
+ const {runCli}=await import('../sources/omp-bot-companion/ranch-cli.mjs'),dir=fs.mkdtempSync(path.join(os.tmpdir(),'feed-cli-')),key='b'.repeat(64),requests=[],stdout=[];
+ try{fs.writeFileSync(path.join(dir,'admin-key.txt'),key);const opts={env:{OMP_BOT_KEY_FILE:path.join(dir,'pairing-key.txt')},streams:{stdout:x=>stdout.push(x),stderr:()=>{}},fetchImpl:async(url,options)=>{requests.push({url,options});return Response.json({items:[],nextCursor:'abc',secret:key});}};
+ assert.equal(await runCli(['feed','--scope','pipeyard','--limit','10','--after','opaque_cursor','--json'],opts),0);const url=new URL(requests[0].url);assert.equal(url.pathname,'/admin/ai/feed');assert.equal(url.searchParams.get('after'),'opaque_cursor');assert.equal(url.searchParams.get('scope'),'pipeyard');assert.equal(requests[0].options.method,'GET');assert(!stdout.join('').includes(key));
+ assert.equal(await runCli(['feed','--file','action.json'],opts),1);assert.equal(await runCli(['board','--scope','ranch'],opts),1);assert.equal(requests.length,1);
+ }finally{fs.rmSync(dir,{recursive:true,force:true});}
+});
 test('CLI skill is available offline before credential discovery',async()=>{
  const {runCli}=await import('../sources/omp-bot-companion/ranch-cli.mjs');const dir=fs.mkdtempSync(path.join(os.tmpdir(),'ranch-skill-offline-')),stdout=[],stderr=[],streams={stdout:x=>stdout.push(x),stderr:x=>stderr.push(x)};let requests=0;
  try{const options={env:{OMP_BOT_KEY_FILE:path.join(dir,'missing','pairing-key.txt')},fetchImpl:async()=>{requests++;throw Error('Offline');},streams};assert.equal(await runCli(['skill'],options),0);assert.match(stdout.at(-1),/bot-ranch-pm/);assert.equal(await runCli(['skill','--json'],options),0);const skill=JSON.parse(stdout.at(-1));assert.equal(skill.name,'bot-ranch-pm');assert.ok(skill.text.length>100);assert.equal(requests,0);assert.equal(stderr.length,0);}finally{fs.rmSync(dir,{recursive:true,force:true});}

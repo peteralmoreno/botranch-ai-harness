@@ -1,6 +1,65 @@
 const {test,expect}=require('@playwright/test');
+test('History remembers the selected recent count and uses it for paging and filters',async({page})=>yard(page,async()=>{
+ await page.getByRole('button',{name:'Demo mode',exact:true}).click();await page.getByRole('button',{name:'History',exact:true}).click();
+ const size=page.getByLabel('Most recent',{exact:true}),rows=page.locator('.history-row');await expect(size).toHaveValue('20');await size.selectOption('10');await expect(rows).toHaveCount(10);
+ await page.getByRole('button',{name:'Show 10 more',exact:true}).click();await expect(rows).toHaveCount(20);await page.getByLabel('History status',{exact:true}).selectOption('succeeded');await expect(rows).toHaveCount(10);
+ await page.reload();await page.getByRole('button',{name:'History',exact:true}).click();await expect(size).toHaveValue('10');await expect(rows).toHaveCount(10);
+ await size.selectOption('100');await expect(rows).toHaveCount(40);await page.getByRole('button',{name:'Active yard',exact:true}).click();await page.getByRole('button',{name:'History',exact:true}).click();await expect(rows).toHaveCount(40);
+ await page.evaluate(()=>localStorage.setItem('botRanch.pipeyard.historySize.v1','999999'));await page.reload();await page.getByRole('button',{name:'History',exact:true}).click();await expect(size).toHaveValue('20');await expect(rows).toHaveCount(20);
+}));
 const fs=require('node:fs'),os=require('node:os'),path=require('node:path');
-test('integrated Ranch yard has live columns, persistent animals and scrolls past six runs',async({page})=>yard(page,async()=>{
+test('demo History has forty samples, two pages, useful filters and persistent local deletion',async({page})=>yard(page,async()=>{
+ await page.getByRole('button',{name:'Demo mode',exact:true}).click();const requests=[];page.on('request',r=>{if(/\/(admin|control)\//.test(r.url()))requests.push(r.url());});
+ await page.getByRole('button',{name:'History',exact:true}).click();await expect(page.locator('.history-row')).toHaveCount(20);await expect(page.locator('#history-count')).toContainText('20 of 40');
+ await page.getByRole('button',{name:'Show 20 more',exact:true}).click();await expect(page.locator('.history-row')).toHaveCount(40);
+ await page.getByLabel('History status',{exact:true}).selectOption('failed');await expect(page.locator('.history-row')).toHaveCount(5);await page.getByLabel('History status',{exact:true}).selectOption('');
+ await page.locator('.history-row[data-run-id="demo-history-01"]').click();await expect(page.locator('#details')).toContainText('Sample review:');await page.getByRole('button',{name:'Delete from History',exact:true}).click();await page.getByRole('button',{name:'Delete permanently',exact:true}).click();await expect(page.locator('#history-count')).toContainText('20 of 39');
+ await page.reload();await page.getByRole('button',{name:'History',exact:true}).click();await expect(page.locator('#history-count')).toContainText('20 of 39');await expect(page.locator('.history-row[data-run-id="demo-history-01"]')).toHaveCount(0);expect(requests).toEqual([]);
+}));
+test('History template filters distinguish local placeholders, Board pipelines and a template named board',async({page})=>{
+ await page.route('**/admin/pipeyard/snapshot',async route=>{const response=await route.fetch(),data=await response.json(),base={...data.runs[0],archived:true};data.runs=[{...base,id:'local',title:'Local draft',localOnly:true,templateId:'',templateName:'Local placeholder'},{...base,id:'board-task',title:'Board workflow',source:'board',templateId:undefined,templateName:'Board Pipeline'},{...base,id:'named-board',title:'External workflow',templateId:'board',templateName:'Custom board'}];await route.fulfill({response,json:data});});
+ await yard(page,async()=>{
+  await page.getByRole('button',{name:'History',exact:true}).click();
+  const filter=page.getByLabel('History template',{exact:true});await expect(filter.locator('option')).toHaveCount(4);
+  for(const [label,title] of [['Local placeholders','Local draft'],['Board pipelines','Board workflow'],['Custom board','External workflow']]){await filter.selectOption({label});await expect(page.locator('.history-row')).toHaveCount(1);await expect(page.locator('.history-row')).toContainText(title);}
+ });
+});
+test('visual History is a paged searchable list without pasture, animals or an idle feed desk',async({page})=>{
+ await page.route('**/control/pipeyard/snapshot',async route=>{const response=await route.fetch(),data=await response.json(),base=data.runs[0];data.runs.push(...Array.from({length:27},(_,i)=>({...base,id:'history-'+i,title:'History '+String(i).padStart(2,'0'),externalId:'old-'+i,archived:true,createdAt:i+1,updatedAt:1000+i,status:i%2?'failed':'succeeded',templateId:i===0?'special':'report',templateName:i===0?'Special export':'Daily report'})));await route.fulfill({response,json:data});});
+ await yard(page,async()=>{
+  const origin=new URL(page.url()).origin;await page.emulateMedia({reducedMotion:'reduce'});await page.setViewportSize({width:1440,height:700});await page.goto(origin+'/pipeyard/#embed=1&pair='+'a'.repeat(64));await page.reload();
+  await page.locator('.animal-layer .pasture-cow').first().click();await expect(page.locator('.creature-panel')).toBeVisible();
+  await page.getByRole('button',{name:'History',exact:true}).click();await expect(page.locator('.pasture')).toBeHidden();await expect(page.locator('.creature-panel')).toBeHidden();await expect(page.getByRole('button',{name:'＋ Add animal',exact:true})).toBeHidden();await expect(page.locator('#pipeline-desk')).toBeHidden();
+  const rows=page.locator('.history-row');await expect(rows).toHaveCount(20);await expect(rows.first()).toContainText('History 26');await expect(page.getByRole('status',{name:'History results'})).toHaveText('Showing 20 of 27 pipelines · newest activity first');
+  const list=page.getByRole('region',{name:'Pipeline history entries'});expect(await list.evaluate(n=>n.scrollHeight>n.clientHeight)).toBe(true);await list.evaluate(n=>n.scrollTop=200);
+  await page.waitForResponse(r=>r.url().endsWith('/control/pipeyard/snapshot'));expect(await list.evaluate(n=>n.scrollTop)).toBeGreaterThan(100);
+  await page.getByRole('button',{name:'Show 20 more',exact:true}).click();await expect(rows).toHaveCount(27);await expect(page.getByRole('button',{name:'Show 20 more',exact:true})).toBeHidden();
+  await page.getByRole('searchbox',{name:'Find a run'}).fill('old-0');await expect(rows).toHaveCount(1);await expect(rows).toContainText('History 00');
+  await page.getByRole('searchbox',{name:'Find a run'}).fill('');await page.getByLabel('History status',{exact:true}).selectOption('failed');await expect(rows).toHaveCount(13);
+  await page.getByLabel('History status',{exact:true}).selectOption('');await page.getByLabel('History template',{exact:true}).selectOption('template:special');await expect(rows).toHaveCount(1);await rows.first().click();await expect(page.locator('#details')).toContainText('History 00');await expect(page.locator('#pipeline-desk')).toBeVisible();
+  await page.setViewportSize({width:540,height:700});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await page.getByRole('button',{name:'Active yard',exact:true}).click();await expect(page.locator('.pasture')).toBeVisible();await expect(page.getByRole('button',{name:'＋ Add animal',exact:true})).toBeVisible();await expect(page.locator('.pipeline-row')).toHaveCount(10);
+ });
+});
+test('embedded Ranch Pipeyard opens a saved ticket in a separate browser page',async({page,context})=>{
+ await context.route('https://tickets.example.test/**',route=>route.fulfill({contentType:'text/html',body:'<title>Ticket fixture</title><p>Ticket fixture</p>'}));
+ await page.route('**/control/pipeyard/snapshot',async route=>{const response=await route.fetch(),data=await response.json();data.runs.find(r=>r.title==='Report 3').ticketUrl='https://tickets.example.test/ABC-1';await route.fulfill({response,json:data});});
+ await yard(page,async()=>{
+  const origin=new URL(page.url()).origin;await page.goto(origin+'/ui/#pair='+'a'.repeat(64)+'&page=pipeyard');
+  const visual=page.frameLocator('#pipeyard-frame');await visual.getByRole('button',{name:/Report 3 ·/}).click();
+  const opened=context.waitForEvent('page');await visual.getByRole('link',{name:'Ticket / Jira ↗'}).click();const ticket=await opened;await expect(ticket).toHaveURL('https://tickets.example.test/ABC-1');await expect(ticket.getByText('Ticket fixture')).toBeVisible();await ticket.close();
+ });
+});
+test('pipeline connection links save, reload and remain safe explicit browser links',async({page})=>yard(page,async()=>{
+ await page.getByRole('button',{name:/Report 3 ·/}).click();await page.getByRole('button',{name:'Edit connection',exact:true}).click();
+ const dialog=page.getByRole('dialog',{name:'Edit pipeline connection'});
+ await dialog.getByLabel('Ticket / Jira URL').fill('https://tickets.example.test/ABC-1');await dialog.getByLabel('Pipeline page URL').fill('https://runs.example.test/one');await dialog.getByRole('button',{name:'Save connection'}).click();
+ const ticket=page.getByRole('link',{name:'Ticket / Jira ↗'}),pipeline=page.getByRole('link',{name:'Pipeline page ↗'});
+ await expect(ticket).toHaveAttribute('href','https://tickets.example.test/ABC-1');await expect(ticket).toHaveAttribute('target','_blank');await expect(ticket).toHaveAttribute('rel','noopener noreferrer');await expect(pipeline).toHaveAttribute('href','https://runs.example.test/one');
+ await page.reload();await page.getByRole('button',{name:/Report 3 ·/}).click();await expect(ticket).toBeVisible();
+ await page.getByRole('button',{name:'Edit connection',exact:true}).click();await dialog.getByLabel('Ticket / Jira URL').fill('');await dialog.getByRole('button',{name:'Save connection'}).click();await expect(ticket).toHaveCount(0);await expect(pipeline).toBeVisible();
+}));
+test('integrated Ranch yard has live columns, persistent animals and scrolls past eight runs',async({page})=>yard(page,async()=>{
  const origin=new URL(page.url()).origin;await page.emulateMedia({reducedMotion:'reduce'});
  await page.goto(origin+'/pipeyard/#embed=1&pair='+'a'.repeat(64));await page.reload();
  await expect(page.locator('.pasture')).toBeVisible();await expect(page.locator('.pipeline-row')).toHaveCount(10);await expect(page.getByRole('img',{name:'Paused',exact:true})).toBeVisible();
@@ -62,7 +121,7 @@ test('ten colored pipes, paused indication, safe details, local notes and histor
  await page.getByLabel('Local run note').fill('Reviewed the inputs');await page.getByRole('button',{name:'Save local note'}).click();await expect(page.locator('#details')).toContainText('Reviewed the inputs');
  await page.getByLabel('Local run note').fill('Draft for the first run');await page.getByRole('button',{name:/Report 2 ·/}).click();await expect(page.getByLabel('Local run note')).toHaveValue('');await page.getByRole('button',{name:/Report 1 ·/}).click();await expect(page.getByLabel('Local run note')).toHaveValue('Draft for the first run');
  await page.getByRole('button',{name:'Close details'}).click();await page.getByRole('button',{name:/Report 2 ·/}).click();await page.getByRole('button',{name:'Clear from yard'}).click();await expect(page.locator('.pipe-tile')).toHaveCount(9);
- await page.getByRole('button',{name:'History',exact:true}).click();await expect(page.locator('.pipe-tile')).toHaveCount(1);await page.getByRole('button',{name:/Report 2 ·/}).click();await page.getByRole('button',{name:'Restore to yard'}).click();await expect(page.locator('.pipe-tile')).toHaveCount(0);
+ await page.getByRole('button',{name:'History',exact:true}).click();await expect(page.locator('.history-row')).toHaveCount(1);await page.getByRole('button',{name:/Report 2 ·/}).click();await page.getByRole('button',{name:'Restore to yard'}).click();await expect(page.locator('.history-row')).toHaveCount(0);
  await page.getByRole('button',{name:'Active yard',exact:true}).click();if(process.env.BOT_RANCH_CAPTURE_TEST_IMAGES==='1')await page.screenshot({path:'.scratch/pipeyard-desktop.png',fullPage:true});
 }));
 test('configuration, template choices and responsive run popout',async({page})=>yard(page,async()=>{
@@ -83,34 +142,34 @@ test('configure a local platform, launch parallel runs and attach without resubm
  });}finally{platform.closeAllConnections();await new Promise(r=>platform.close(r));}
 });
 test('six demo pipes support approval, start, notes and reset without companion API requests',async({page})=>yard(page,async()=>{
- await page.getByRole('button',{name:'Demo mode',exact:true}).click();await expect(page.locator('#demo-banner')).toBeVisible();await expect(page.locator('.pipe-tile')).toHaveCount(6);
+ await page.getByRole('button',{name:'Demo mode',exact:true}).click();await expect(page.locator('#yard-mode')).toHaveText('Demo');await expect(page.locator('.pipe-tile')).toHaveCount(6);
  const calls=[];page.on('request',r=>{if(r.url().includes('/admin/'))calls.push(r.url());});
  const north=page.locator('#runs').getByRole('button',{name:/Market scan · North district/}),south=page.locator('#runs').getByRole('button',{name:/Market scan · South district/});expect(await north.evaluate(n=>n.style.getPropertyValue('--pipe'))).toBe(await south.evaluate(n=>n.style.getPropertyValue('--pipe')));
  await page.getByRole('button',{name:/Campaign release · Awaiting approval/}).click();await page.getByRole('button',{name:'Review approval'}).click();await expect(page.locator('#action-explanation')).toContainText('simulated');await page.getByRole('button',{name:'Confirm',exact:true}).click();await expect(page.locator('#details')).toContainText('no charge was made');
  await page.getByRole('button',{name:/New campaign brief · Ready to launch/}).click();await page.getByRole('button',{name:'Start demo run'}).click();await expect(page.locator('#details')).toContainText('Demo request accepted');
  await page.getByLabel('Local run note').fill('Testing the demo');await page.getByRole('button',{name:'Save local note'}).click();await expect(page.locator('#details')).toContainText('Testing the demo');
  await page.getByLabel('Local run note').fill('Discard this demo draft');await page.getByRole('button',{name:'Reset demo'}).click();await expect(page.locator('.pipe-tile')).toHaveCount(6);await page.getByRole('button',{name:/New campaign brief · Ready to launch/}).click();await expect(page.getByLabel('Local run note')).toHaveValue('');expect(calls).toEqual([]);
- await page.getByRole('button',{name:'Exit demo',exact:true}).click();await expect(page.locator('.pipe-tile')).toHaveCount(10);await expect(page.locator('#demo-banner')).not.toBeVisible();
+ await page.getByRole('button',{name:'Exit demo',exact:true}).click();await expect(page.locator('.pipe-tile')).toHaveCount(10);await expect(page.locator('#yard-mode')).toHaveText('Live');
 }));
 test('demo popouts and reload stay isolated, and simulated progress advances',async({page})=>yard(page,async()=>{
  await page.getByRole('button',{name:'Demo mode',exact:true}).click();await page.locator('#runs').getByRole('button',{name:/Market scan · North district/}).click();
  const popupPromise=page.waitForEvent('popup');await page.getByRole('button',{name:'Pop out run'}).click();const popup=await popupPromise;const calls=[];popup.on('request',r=>{if(r.url().includes('/admin/'))calls.push(r.url());});
- await expect(popup.locator('#demo-banner')).toBeVisible();await expect(popup.locator('#details')).toContainText('North district');await popup.reload();await expect(popup.locator('#demo-banner')).toBeVisible();await expect(popup.locator('#details')).toContainText('North district');
+ await expect(popup.locator('#yard-mode')).toHaveText('Demo');await expect(popup.locator('#details')).toContainText('North district');await popup.reload();await expect(popup.locator('#yard-mode')).toHaveText('Demo');await expect(popup.locator('#details')).toContainText('North district');
  await expect.poll(()=>popup.locator('.detail-status').textContent(),{timeout:10000}).not.toContain('32%');expect(calls).toEqual([]);await popup.close();
  await page.setViewportSize({width:1440,height:900});await page.getByRole('button',{name:'Reset demo'}).click();if(process.env.BOT_RANCH_CAPTURE_TEST_IMAGES==='1')await page.screenshot({path:'.scratch/pipeyard-demo.png',fullPage:true});
 }));
 test('exiting demo clears sample controls immediately even when the live companion fails',async({page})=>yard(page,async()=>{
  await page.getByRole('button',{name:'Demo mode',exact:true}).click();await page.getByRole('button',{name:/New campaign brief · Ready to launch/}).click();await expect(page.getByRole('button',{name:'Start demo run'})).toBeVisible();
  let pending;await page.route('**/admin/pipeyard/snapshot',route=>{pending=route;});const posts=[];page.on('request',r=>{if(r.method()==='POST'&&r.url().includes('/admin/'))posts.push(r.url());});
- await page.getByRole('button',{name:'Exit demo',exact:true}).click();await expect(page.locator('.pipe-tile')).toHaveCount(0);await expect(page.getByRole('button',{name:'Start demo run'})).not.toBeVisible();await expect.poll(()=>!!pending).toBe(true);await pending.abort();await expect(page.locator('#notice')).not.toBeEmpty();expect(posts).toEqual([]);
+ await page.getByRole('button',{name:'Exit demo',exact:true}).click();await expect(page.locator('.pipe-tile')).toHaveCount(0);await expect(page.getByRole('button',{name:'Start demo run'})).not.toBeVisible();await expect.poll(()=>!!pending).toBe(true);await pending.abort();await expect(page.locator('#connection')).toContainText('Offline');expect(posts).toEqual([]);
 }));
 
 test('opening due progress checks once, shows safe flexible JSON, and expands a saved response',async({page})=>{
  let active,checks=[];
- await page.route('**/admin/pipeyard/snapshot',async route=>{const response=await route.fetch(),data=await response.json();if(!active)active={...data.runs[2],checkDue:true,progressResponse:null};data.runs[2]=active;await route.fulfill({response,json:data});});
- await page.route('**/admin/pipeyard/action',async route=>{const body=route.request().postDataJSON();checks.push(body.action);active={...active,checkDue:false,progressResponse:{id:'response-1',source:'progress',fetchedAt:Date.now(),data:{custom:{items:[{title:'<img src=x onerror=alert(1)>',ready:true}],details:null},percent:47},review:null}};await route.fulfill({json:active});});
+ await page.route('**/admin/pipeyard/snapshot',async route=>{const response=await route.fetch(),data=await response.json();if(!active)active={...data.runs[2],checkDue:true,responses:{status:null,progress:null}};data.runs[2]=active;await route.fulfill({response,json:data});});
+ await page.route('**/admin/pipeyard/action',async route=>{const body=route.request().postDataJSON();checks.push(body.action);active={...active,checkDue:false,responses:{status:null,progress:{mode:'raw',id:'response-1',source:'progress',fetchedAt:Date.now(),data:{custom:{items:[{title:'<img src=x onerror=alert(1)>',ready:true}],details:null},percent:47},review:null}}};await route.fulfill({json:active});});
  await yard(page,async()=>{
-  await page.getByRole('button',{name:/Report 3 ·/}).click();await expect(page.locator('.progress-response')).toContainText('Awaiting agent review');expect(checks).toEqual(['check-due']);
+  await page.getByRole('button',{name:/Report 3 ·/}).click();await expect(page.locator('.progress-response[data-source=progress]')).toContainText('Awaiting agent review');expect(checks).toEqual(['check-due']);
   await expect(page.locator('.progress-response img')).toHaveCount(0);await page.getByRole('button',{name:'Expand progress'}).click();await expect(page.getByRole('dialog',{name:'Saved progress response'})).toBeVisible();await expect(page.getByLabel('Progress JSON')).toHaveValue(/<img src=x onerror=alert/);
   await page.getByRole('button',{name:'Close progress'}).click();await page.getByRole('button',{name:'Close details'}).click();await page.getByRole('button',{name:/Report 3 ·/}).click();expect(checks).toEqual(['check-due']);
   await page.getByRole('button',{name:'Check now',exact:true}).click();await expect.poll(()=>checks).toEqual(['check-due','refresh']);
@@ -125,10 +184,12 @@ test('an active pipeline can be cleared locally and restored without remote canc
 
 test('manual demo pipelines add without triggering, delete permanently, and survive reload without API calls',async({page})=>yard(page,async()=>{
  await page.getByRole('button',{name:'Demo mode',exact:true}).click();const calls=[];page.on('request',r=>{if(/\/(admin|control)\//.test(r.url()))calls.push(r.url());});
- await page.getByRole('button',{name:'＋ Add demo pipeline',exact:true}).click();await page.getByLabel('Pipeline name',{exact:true}).fill('My manual pipe');await page.getByRole('button',{name:'Add to yard',exact:true}).click();await expect(page.getByRole('dialog',{name:'Add demo pipeline'})).toContainText('All six slots are occupied');await page.getByRole('button',{name:'Cancel',exact:true}).click();
- await page.locator('.pipe-tile').first().click();await page.getByRole('button',{name:'Delete demo pipe',exact:true}).click();await expect(page.locator('.pipe-tile')).toHaveCount(5);
- await page.getByRole('button',{name:'＋ Add demo pipeline',exact:true}).click();await page.getByLabel('Pipeline name',{exact:true}).fill('My manual pipe');await page.getByLabel('Pipe color',{exact:true}).selectOption('#b51f43');await page.getByRole('button',{name:'Add to yard',exact:true}).click();await expect(page.locator('.pipe-tile')).toHaveCount(6);await expect(page.locator('#details')).toContainText('Not triggered');
- await page.reload();await expect(page.getByRole('button',{name:'My manual pipe · Ready to launch',exact:true})).toBeVisible();await page.getByRole('button',{name:'My manual pipe · Ready to launch',exact:true}).click();await page.getByRole('button',{name:'Delete demo pipe',exact:true}).click();await page.reload();await expect(page.locator('.pipe-tile')).toHaveCount(5);await expect(page.getByRole('button',{name:'My manual pipe · Ready to launch',exact:true})).toHaveCount(0);expect(calls).toEqual([]);
+ for(const title of ['Slot seven','Slot eight']){await page.getByRole('button',{name:'＋ Add demo pipeline',exact:true}).click();await page.getByLabel('Pipeline name',{exact:true}).fill(title);await page.getByRole('button',{name:'Add to yard',exact:true}).click();}
+ await expect(page.locator('.pipe-tile')).toHaveCount(8);
+ await page.getByRole('button',{name:'＋ Add demo pipeline',exact:true}).click();await page.getByLabel('Pipeline name',{exact:true}).fill('My manual pipe');await page.getByRole('button',{name:'Add to yard',exact:true}).click();await expect(page.getByRole('dialog',{name:'Add demo pipeline'})).toContainText('All eight slots are occupied');await page.getByRole('button',{name:'Cancel',exact:true}).click();
+ await page.locator('.pipe-tile[data-run-id="demo-research-north"]').click();await page.getByRole('button',{name:'Delete demo pipe',exact:true}).click();await expect(page.locator('.pipe-tile')).toHaveCount(7);
+ await page.getByRole('button',{name:'＋ Add demo pipeline',exact:true}).click();await page.getByLabel('Pipeline name',{exact:true}).fill('My manual pipe');await page.getByLabel('Pipe color',{exact:true}).selectOption('#b51f43');await page.getByRole('button',{name:'Add to yard',exact:true}).click();await expect(page.locator('.pipe-tile')).toHaveCount(8);await expect(page.locator('#details')).toContainText('Not triggered');
+ await page.reload();await expect(page.getByRole('button',{name:'My manual pipe · Ready to launch',exact:true})).toBeVisible();await page.getByRole('button',{name:'My manual pipe · Ready to launch',exact:true}).click();await page.getByRole('button',{name:'Delete demo pipe',exact:true}).click();await page.reload();await expect(page.locator('.pipe-tile')).toHaveCount(7);await expect(page.getByRole('button',{name:'My manual pipe · Ready to launch',exact:true})).toHaveCount(0);expect(calls).toEqual([]);
 }));
 
 test('connection editor shows a stable local ID and persists editable demo ID and metadata',async({page})=>yard(page,async()=>{
@@ -145,20 +206,20 @@ test('animal save conflicts stop further edits and offer reload',async({page})=>
 
 test('an empty visual yard keeps the same dimensions without a large empty message',async({page})=>yard(page,async()=>{
  const origin=new URL(page.url()).origin;await page.goto(origin+'/pipeyard/#embed=1&pair='+'a'.repeat(64));await page.reload();await expect(page.locator('.pipeline-row')).toHaveCount(10);
- const before=await page.locator('.pasture').boundingBox();await page.getByRole('searchbox',{name:'Find a run'}).fill('no-matching-pipeline');await expect(page.locator('.pipe-tile')).toHaveCount(0);await expect(page.locator('#empty')).toBeHidden();const after=await page.locator('.pasture').boundingBox();expect(after.height).toBe(before.height);expect(after.width).toBe(before.width);
+ const before=await page.locator('.pasture').boundingBox();await page.getByRole('searchbox',{name:'Find a run'}).fill('no-matching-pipeline');await expect(page.locator('.pipe-tile')).toHaveCount(0);await expect(page.locator('#empty')).toBeHidden();const after=await page.locator('.pasture').boundingBox();expect(after.height).toBe(before.height);expect(after.width).toBe(before.width);await expect(page.locator('.pipe-grid')).toHaveCSS('grid-template-columns',/^(\d+(?:\.\d+)?px ){7}\d+(?:\.\d+)?px$/);
 }));
 
 test('Ranch adds a pipeline next to animal controls using the existing tracking flow',async({page})=>yard(page,async()=>{
  const origin=new URL(page.url()).origin;await page.goto(origin+'/pipeyard/#embed=1&pair='+'a'.repeat(64));await page.reload();await expect(page.locator('.pipeline-row')).toHaveCount(10);
- const add=page.getByRole('button',{name:'＋ Pipeline',exact:true});await expect(add).toBeVisible();const animal=await page.getByRole('button',{name:'＋ Add animal',exact:true}).boundingBox(),pipe=await add.boundingBox();expect(pipe.x).toBeGreaterThan(animal.x);expect(Math.abs(pipe.y-animal.y)).toBeLessThan(2);
+ const add=page.getByRole('button',{name:'＋ Add pipeline',exact:true});await expect(add).toBeVisible();const animal=await page.getByRole('button',{name:'＋ Add animal',exact:true}).boundingBox(),pipe=await add.boundingBox();expect(pipe.x).toBeGreaterThan(animal.x);expect(Math.abs(pipe.y-animal.y)).toBeLessThan(2);
  const calls=[];page.on('request',r=>{if(r.url().endsWith('/control/pipeyard/action'))calls.push(r.postDataJSON());});
  await add.click();await page.getByRole('button',{name:'Track existing',exact:true}).click();await expect(page.getByRole('heading',{name:'Track existing run'})).toBeVisible();await page.getByLabel('External run ID',{exact:true}).fill('run-0');await page.getByRole('button',{name:'Verify & track',exact:true}).click();await expect(page.locator('#create-dialog')).toBeHidden();expect(calls.map(c=>c.action)).toEqual(['register']);await expect(page.locator('.pipeline-row')).toHaveCount(10);
- await page.getByRole('button',{name:'Demo mode',exact:true}).click();await page.getByRole('button',{name:'＋ Pipeline',exact:true}).click();await page.getByRole('button',{name:'Add local placeholder',exact:true}).click();await expect(page.getByRole('dialog',{name:'Add demo pipeline',exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'Demo mode',exact:true}).click();await page.getByRole('button',{name:'＋ Add pipeline',exact:true}).click();await page.getByRole('button',{name:'Add local placeholder',exact:true}).click();await expect(page.getByRole('dialog',{name:'Add demo pipeline',exact:true})).toBeVisible();
 }));
 
 test('local placeholder can be created from Ranch, reloaded and connected later without a launch',async({page})=>yard(page,async()=>{
  const origin=new URL(page.url()).origin;await page.goto(origin+'/pipeyard/#embed=1&pair='+'a'.repeat(64));await page.reload();await expect(page.locator('.pipeline-row')).toHaveCount(10);const calls=[];page.on('request',r=>{if(r.url().endsWith('/control/pipeyard/action'))calls.push(r.postDataJSON());});
- await page.getByRole('button',{name:'＋ Pipeline',exact:true}).click();await page.getByRole('button',{name:'Add local placeholder',exact:true}).click();await page.getByRole('textbox',{name:'Pipeline name'}).fill('Design review');await page.getByLabel('Pipe color',{exact:true}).selectOption('#b51f43');await page.getByRole('button',{name:'Add to yard',exact:true}).click();await expect(page.locator('.pipeline-row')).toHaveCount(11);await expect(page.getByRole('button',{name:'Connect to platform',exact:true})).toBeVisible();expect(calls.map(c=>c.action)).toEqual(['create-local']);
+ await page.getByRole('button',{name:'＋ Add pipeline',exact:true}).click();await page.getByRole('button',{name:'Add local placeholder',exact:true}).click();await page.getByRole('textbox',{name:'Pipeline name'}).fill('Design review');await page.getByLabel('Pipe color',{exact:true}).selectOption('#b51f43');await page.getByRole('button',{name:'Add to yard',exact:true}).click();await expect(page.locator('.pipeline-row')).toHaveCount(11);await expect(page.getByRole('button',{name:'Connect to platform',exact:true})).toBeVisible();expect(calls.map(c=>c.action)).toEqual(['create-local']);
  await page.reload();await expect(page.getByRole('button',{name:'Design review · Local placeholder',exact:true})).toBeVisible();await page.getByRole('button',{name:'Design review · Local placeholder',exact:true}).click();await page.getByRole('button',{name:'Connect to platform',exact:true}).click();await expect(page.getByRole('heading',{name:'Connect to platform',exact:true})).toBeVisible();await expect(page.getByLabel('External run ID',{exact:true})).toBeVisible();
 }));
 
@@ -188,7 +249,7 @@ test('adding a placeholder leaves Animal Desk and displays its truthful status',
  await page.emulateMedia({reducedMotion:'reduce'});
  const origin=new URL(page.url()).origin;await page.goto(origin+'/pipeyard/#yard=1&admin='+'b'.repeat(64));await page.reload();await expect(page.locator('.creature-save-status')).toHaveText('Animals saved locally');
  await page.locator('.pasture-cow').first().click();await expect(page.getByRole('heading',{name:'Animal Desk',exact:true})).toBeVisible();
- await page.getByRole('button',{name:'＋ Pipeline',exact:true}).click();await page.getByRole('button',{name:'Add local placeholder',exact:true}).click();await page.getByLabel('Pipeline name',{exact:true}).fill('Local design');await page.getByRole('button',{name:'Add to yard',exact:true}).click();
+ await page.getByRole('button',{name:'＋ Add pipeline',exact:true}).click();await page.getByRole('button',{name:'Add local placeholder',exact:true}).click();await page.getByLabel('Pipeline name',{exact:true}).fill('Local design');await page.getByRole('button',{name:'Add to yard',exact:true}).click();
  await expect(page.getByRole('button',{name:'Connect to platform',exact:true})).toBeVisible();await expect(page.getByRole('heading',{name:'Pipeline Desk',exact:true})).toBeVisible();
  await expect(page.getByRole('button',{name:'Local design · Local placeholder',exact:true})).toContainText('Local placeholder');
 }));
@@ -265,8 +326,30 @@ test('pipe appearance persists and narrow pipe targets leave animals selectable 
 test('History deletion requires confirmation and does not touch external work',async({page})=>yard(page,async()=>{
  const actions=[];page.on('request',r=>{if(r.url().endsWith('/pipeyard/action'))actions.push(r.postDataJSON());});
  await page.getByRole('button',{name:/Report 3 ·/}).click();await page.getByRole('button',{name:'Clear from yard',exact:true}).click();await page.getByRole('button',{name:'History',exact:true}).click();await page.getByRole('button',{name:/Report 3 ·/}).click();
- await page.getByRole('button',{name:'Delete from History',exact:true}).click();await page.getByRole('button',{name:'Cancel',exact:true}).click();expect(actions.filter(a=>a.action==='delete')).toHaveLength(0);await expect(page.locator('.pipe-tile')).toHaveCount(1);
- await page.getByRole('button',{name:'Delete from History',exact:true}).click();await page.getByRole('button',{name:'Delete permanently',exact:true}).click();await expect(page.locator('.pipe-tile')).toHaveCount(0);expect(actions.filter(a=>a.action==='delete')).toHaveLength(1);expect(actions.at(-1)).toMatchObject({action:'delete',confirmed:true});
- await page.reload();await page.getByRole('button',{name:'History',exact:true}).click();await expect(page.locator('.pipe-tile')).toHaveCount(0);
- await page.getByRole('button',{name:'Demo mode',exact:true}).click();await page.locator('.pipe-tile').first().click();await page.getByRole('button',{name:'Clear from yard',exact:true}).click();await page.getByRole('button',{name:'History',exact:true}).click();await page.locator('.pipe-tile').first().click();await page.getByRole('button',{name:'Delete from History',exact:true}).click();await page.getByRole('button',{name:'Delete permanently',exact:true}).click();await expect(page.locator('.pipe-tile')).toHaveCount(0);expect(actions.filter(a=>a.action==='delete')).toHaveLength(1);
+ await page.getByRole('button',{name:'Delete from History',exact:true}).click();await page.getByRole('button',{name:'Cancel',exact:true}).click();expect(actions.filter(a=>a.action==='delete')).toHaveLength(0);await expect(page.locator('.history-row')).toHaveCount(1);
+ await page.getByRole('button',{name:'Delete from History',exact:true}).click();await page.getByRole('button',{name:'Delete permanently',exact:true}).click();await expect(page.locator('.history-row')).toHaveCount(0);expect(actions.filter(a=>a.action==='delete')).toHaveLength(1);expect(actions.at(-1)).toMatchObject({action:'delete',confirmed:true});
+ await page.reload();await page.getByRole('button',{name:'History',exact:true}).click();await expect(page.locator('.history-row')).toHaveCount(0);
+ await page.getByRole('button',{name:'Demo mode',exact:true}).click();await page.locator('.pipe-tile').first().click();await page.getByRole('button',{name:'Clear from yard',exact:true}).click();await page.getByRole('button',{name:'History',exact:true}).click();await page.locator('.history-row').first().click();await page.getByRole('button',{name:'Delete from History',exact:true}).click();await page.getByRole('button',{name:'Delete permanently',exact:true}).click();await expect(page.locator('.history-row')).toHaveCount(20);expect(actions.filter(a=>a.action==='delete')).toHaveLength(1);
+}));
+
+test('response policies, stage positions and polling controls stay scoped to a run',async({page})=>{
+ await page.route('**/admin/pipeyard/snapshot',async route=>{const response=await route.fetch(),data=await response.json();data.runs[2]={...data.runs[2],checkDue:false,intervalMinutes:5,stagePosition:{stage:'validation',currentIndex:8,total:8},responses:{status:null,progress:{id:'custom-1',source:'progress',mode:'custom',fetchedAt:Date.now(),fields:[{label:'Phase',value:'Validation'},{label:'Count',value:'0'}],review:null}},responseVisibility:{status:'hidden',progress:'custom'},progressResponse:{data:{unsafeLegacy:'MUST_NOT_RENDER'}}};await route.fulfill({response,json:data});});
+ await yard(page,async()=>{await page.getByRole('button',{name:/Report 3 ·/}).click();await expect(page.locator('#details')).toContainText('Stage 8 of 8 — validation');await expect(page.locator('#details')).toContainText('Response hidden by configuration');await expect(page.locator('#details')).toContainText('Validation');await expect(page.locator('#details')).not.toContainText('MUST_NOT_RENDER');await expect(page.getByLabel('Check frequency',{exact:true})).toHaveValue('5');await expect(page.getByLabel('Check frequency',{exact:true}).locator('option')).toHaveText(['30 seconds','1 minute','2 minutes','3 minutes','5 minutes','10 minutes','15 minutes','30 minutes']);await expect(page.locator('#notice, .yard-header, #demo-banner')).toHaveCount(0);await expect(page.locator('#yard-mode')).toHaveText('Live');});
+});
+
+test('frequency edits retain unsaved values during busy retry and demo never calls live actions',async({page})=>yard(page,async()=>{
+ let attempts=0;await page.route('**/admin/pipeyard/action',async route=>{const body=route.request().postDataJSON();if(body.action==='set-check-interval'&&++attempts===1)return route.fulfill({status:409,json:{error:'A check is in flight',code:'PIPEYARD_BUSY',retryable:true}});await route.continue();});
+ await page.getByRole('button',{name:/Report 3 ·/}).click();await page.getByLabel('Check frequency',{exact:true}).selectOption('0.5');await page.getByRole('button',{name:'Save frequency',exact:true}).click();await expect(page.locator('.cadence-form')).toContainText('Saved frequency: 30 seconds');expect(attempts).toBe(2);await expect(page.locator('#notice')).toHaveCount(0);
+ await page.getByRole('button',{name:'Close details'}).click();await page.getByRole('button',{name:'Demo mode',exact:true}).click();const writes=[];page.on('request',r=>{if(r.method()==='POST'&&r.url().includes('/admin/'))writes.push(r.url());});await page.locator('#runs').getByRole('button',{name:/Market scan · North district/}).click();await page.getByLabel('Check frequency',{exact:true}).selectOption('15');await page.getByRole('button',{name:'Save frequency',exact:true}).click();await expect(page.locator('.cadence-form')).toContainText('Saved frequency: 15 minutes');expect(writes).toEqual([]);
+}));
+
+test('configuration preview and failures stay in their dialog and run failures stay with the run',async({page})=>yard(page,async()=>{
+ await page.getByRole('button',{name:'Configure platforms'}).click();await page.getByLabel('Platform configuration JSON').fill('{broken');await page.getByRole('button',{name:'Validate & save'}).click();await expect(page.locator('#config-error')).not.toBeEmpty();await expect(page.locator('#config-error')).toBeFocused();
+ const config={version:1,platforms:[{id:'sample',name:'Sample provider',baseUrl:'https://example.test',operations:{status:{method:'GET',path:'/runs/{runId}'}},responses:{status:{desk:{mode:'custom',fields:[{label:'Phase',path:'phase',format:'title'}]}},progress:{desk:{mode:'hidden'}}}}],templates:[{id:'sample',name:'Sample',platformId:'sample',color:'#61b7ba'}]};await page.getByLabel('Platform configuration JSON').fill(JSON.stringify(config));await page.getByLabel('Sample response JSON').fill('{"phase":"validation","extra":"UNSELECTED_SAMPLE"}');await page.getByRole('button',{name:'Preview response',exact:true}).click();await expect(page.locator('#response-preview')).toContainText('Validation');await expect(page.locator('#response-preview')).not.toContainText('UNSELECTED_SAMPLE');await page.getByLabel('Response endpoint').selectOption('progress');await page.getByRole('button',{name:'Preview response',exact:true}).click();await expect(page.locator('#response-preview')).toHaveText('Response hidden by configuration.');
+ await page.route('**/admin/pipeyard/config',route=>route.fulfill({status:503,json:{error:'Configuration storage unavailable'}}));await page.getByRole('button',{name:'Validate & save'}).click();await expect(page.locator('#config-error')).toContainText('Configuration storage unavailable');await page.getByRole('button',{name:'Close configuration'}).click();await page.getByRole('button',{name:/Report 3 ·/}).click();await page.route('**/admin/pipeyard/action',route=>route.fulfill({status:403,json:{error:'Action denied'}}));await page.getByRole('button',{name:'Check now',exact:true}).click();await expect(page.locator('#details .run-error')).toHaveText('Action denied');await expect(page.locator('#notice')).toHaveCount(0);
+}));
+
+test('toolbar mode stays visible at narrow widths and failed popouts have scoped feedback',async({page})=>yard(page,async()=>{
+ await page.setViewportSize({width:420,height:780});await expect(page.locator('#yard-mode')).toBeVisible();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await expect(page.getByRole('heading',{name:'Pipeyard',exact:true})).toHaveCount(1);await expect(page.locator('.yard-header,#demo-banner')).toHaveCount(0);
+ await page.getByRole('button',{name:/Report 3 ·/}).click();await page.evaluate(()=>window.open=()=>null);await page.getByRole('button',{name:'Pop out run'}).click();await expect(page.locator('#details .run-error')).toContainText('Could not open the run window');
 }));

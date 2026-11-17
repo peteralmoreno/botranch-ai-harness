@@ -3,6 +3,11 @@ const {contextBridge, ipcRenderer} = require('electron');
 
 // Expose only the small capability set needed by the current local page.
 const page = location.pathname.split('/').pop();
+// Send only fixed event codes: exception messages and page data can contain secrets.
+if(page==='index.html'){
+  window.addEventListener('error',()=>ipcRenderer.send('bot-ranch:startup-status','renderer-error'));
+  window.addEventListener('unhandledrejection',()=>ipcRenderer.send('bot-ranch:startup-status','renderer-rejection'));
+}
 const capabilities = {};
 if(page==='index.html')Object.assign(capabilities,{
   pipeyard:(kind,body)=>ipcRenderer.invoke('bot-ranch:pipeyard',kind,body),

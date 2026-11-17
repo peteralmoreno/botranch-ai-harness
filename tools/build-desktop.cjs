@@ -44,9 +44,15 @@ function iconPng() {
 }
 function stageDesktop(sources, destination, {runtime = true} = {}) {
   const source = path.join(sources, 'omp-bot-desktop'), app = path.join(destination, 'resources/app');
+  if (fs.existsSync(destination) && fs.readdirSync(destination).length) throw Error('Desktop output must be a fresh empty directory.');
+  const version = JSON.parse(fs.readFileSync(path.join(sources, 'omp-bot/manifest.json'), 'utf8')).version;
+  const sourcePackage=JSON.parse(fs.readFileSync(path.join(source,'package.json'),'utf8'));
+  const packageVersion=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8')).version;
+  const lock=JSON.parse(fs.readFileSync(path.join(root,'package-lock.json'),'utf8'));
+  if(!/^\d+\.\d+\.\d+$/.test(version)||[sourcePackage.version,packageVersion,lock.version,lock.packages?.['']?.version].some(value=>value!==version))throw Error('Desktop versions must match package, lockfile and source manifest.');
+  if(runtime){const dist=path.join(root,'node_modules/electron/dist');for(const name of [...runtimeFiles,'locales/en-US.pak'])if(!fs.existsSync(path.join(dist,name)))throw Error('Incomplete Electron runtime; run npm ci before packaging. Missing: '+name);}
   fs.mkdirSync(app, {recursive: true});
   for (const name of nativeFiles) fs.copyFileSync(path.join(source, name), path.join(app, name));
-  const version = JSON.parse(fs.readFileSync(path.join(sources, 'omp-bot/manifest.json'), 'utf8')).version;
   const pkg = JSON.parse(fs.readFileSync(path.join(app,'package.json'),'utf8')); pkg.version = version;
   fs.writeFileSync(path.join(app,'package.json'),JSON.stringify(pkg,null,2)+'\n');
   require('esbuild').buildSync({entryPoints:[path.join(source,'renderer.tsx')],outfile:path.join(app,'renderer.js'),bundle:true,platform:'browser',format:'iife',jsx:'automatic',minify:true,sourcemap:false,define:{'process.env.NODE_ENV':'"production"'},legalComments:'linked',nodePaths:[path.join(root,'node_modules')]});

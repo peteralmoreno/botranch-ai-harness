@@ -39,7 +39,10 @@ test('release staging includes complete source UI and excludes private or genera
     const files = fs.readdirSync(output, { recursive: true }).filter(f => fs.statSync(path.join(output, f)).isFile()).sort();
     assert.deepEqual(files, fs.readdirSync(second, { recursive: true }).filter(f => fs.statSync(path.join(second, f)).isFile()).sort());
     // Framework csc embeds compilation timestamps/MVIDs; compare executable readiness.
-    for (const file of files.filter(f=>!f.endsWith('.exe'))) assert.deepEqual(fs.readFileSync(path.join(output, file)), fs.readFileSync(path.join(second, file)));
+    for (const file of files.filter(f=>!f.endsWith('.exe')&&f!=='release.json')) assert.deepEqual(fs.readFileSync(path.join(output, file)), fs.readFileSync(path.join(second, file)));
+    // Native executable timestamps differ, so their manifest hashes must differ
+    // too. Validate each produced manifest against its own exact bytes instead.
+    for(const directory of [output,second]){const manifest=JSON.parse(fs.readFileSync(path.join(directory,'release.json')));assert.equal(Object.keys(manifest.hashes).length,manifest.files.length);for(const file of manifest.files)assert.equal(manifest.hashes[file],require('node:crypto').createHash('sha256').update(fs.readFileSync(path.join(directory,file))).digest('hex'));}
     assert.equal(require('node:child_process').spawnSync(path.join(second,'bin/Terminal-Control.exe'),['probe'],{encoding:'utf8',windowsHide:true}).stdout.trim(),'ready:1');
   } finally { fs.rmSync(temporary, { recursive: true, force: true }); }
 });

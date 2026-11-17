@@ -26,3 +26,11 @@ The companion normally listens on `http://127.0.0.1:43822`. Keep it local. Do no
 Finish active work, install the new complete ZIP, quit the desktop app from its tray menu, and reopen botRanch. Closing a window only hides it. The installer preserves profiles, tasks, keys, and bot-home settings. Import the matching widget when using iCUE.
 
 For a source build, see [development](build-and-import.md). For startup or permission failures, see [troubleshooting](testing-and-troubleshooting.md).
+
+## Verified packages and rollback
+
+The installer checks package hashes, required desktop files and version agreement before changing the active version. Reinstalling identical verified files is allowed; different or damaged files under the same version are rejected. Use a new release version rather than replacing an installed directory.
+
+Installing does not replace a running dock. Choose **Quit desktop app** from its tray menu and reopen from Start. Quitting the dock leaves the companion and bot sessions running.
+
+The installer records the previous version in `current.json`. Recovery through `rollbackRelease(installDirectory)` in `install.mjs` validates that version before selecting it. Back up the bot home and companion state before upgrades: changing the executable version does not reverse data migrations. Pipeyard's response migration keeps `runs.json.pre-responses-v1.bak`; restore a coordinated backup before using an older reader, rather than combining old files with newly edited state.

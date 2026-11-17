@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.1.10
+
+- Choose how many recent Pipeyard History entries to display, with matching Show more batches.
+- Choose a dedicated pipeline/History storage folder in Settings, preserving records, templates and an original-location backup.
+
+## 1.1.9
+
+- Browse Pipeyard History as compact rows with search, status/template filters, and twenty entries per page.
+- Add forty varied demo History entries with notes and results; retain six active examples and eight active slots.
+
+## 1.1.8
+
+- Expand the visual Pipeyard and demo capacity to eight occupied pipeline slots.
+
+- Read compact Ranch/Pipeyard activity through the authenticated feed API or CLI, with filters and incremental cursors.
+- Save optional ticket/Jira and pipeline page links on runs; open them from the desk or sidebar in your browser.
+
+## 1.1.7
+
+- Separate sanitized status/progress records with configurable raw, selected-field, or hidden presentation. Keep stage position distinct from completion and preserve optional cost/approval verification.
+- Edit per-run polling frequency from 30 seconds to 30 minutes without changing deadlines or external work; new configurations default to one minute.
+- Remove decorative dock edge stripes and the large Pipeyard header while retaining scoped errors and a compact Demo/Live indicator.
+- Harden package integrity, same-version installation and isolated packaged-desktop verification. The reported unavailable 1.1.6 artifact remains undiagnosed; no live activation is implied.
+
 ## 1.1.5
 
 - Open or focus a session for any bot from Ranch or Pipeyard, without restarting live work.

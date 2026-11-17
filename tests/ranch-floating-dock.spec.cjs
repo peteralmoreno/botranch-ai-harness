@@ -24,7 +24,7 @@ async function setup(page) {
       tasks: [{ id: 't1', revision:3, instructions:'Review carefully', projectFolder:'D:/Bots', title: 'Review the renderer', status: 'review', assignedProfileId: 'p1', family: { name: 'Desktop', color: 'cyan' } }, { id: 't2',revision:4,instructions:'Build and verify',projectFolder:'D:/Bots', title: 'Ship installer', status: 'todo' }, { id: 't3', title: 'Archived work', status: 'done', archived: true }],
       updates: [{ id: 'u1', profileId: 'p1', taskId: 't1', text: '<img src=x onerror=alert(1)> Finished review', at: Date.now() }]
     };
-    window.pipeyardData={runs:[{id:'run-1',title:'Market report',templateName:'Research',platformName:'Example',externalId:'external-42',status:'running',tracking:'active',checkDue:false,displayProgress:42,progressSource:'platform',progressResponse:{id:'r1',data:{report:{stage:'Review',items:3}},source:'progress',fetchedAt:Date.now()},notes:[],events:[],color:'#61b7ba'}]};
+    window.pipeyardData={runs:[{id:'run-1',title:'Market report',templateName:'Research',platformName:'Example',externalId:'external-42',status:'running',tracking:'active',checkDue:false,displayProgress:42,progressSource:'platform',responses:{status:null,progress:{mode:'raw',id:'r1',data:{report:{stage:'Review',items:3}},source:'progress',fetchedAt:Date.now()}},notes:[],events:[],color:'#61b7ba'}]};
     window.botRanch = {
       pipeyard:async(kind,body)=>{window.dockCalls.push({pipeyard:kind,body});if(window.pipeyardOffline)return {ok:false,error:'Pipeyard unavailable'};return {ok:true,result:kind==='snapshot'?window.pipeyardData:{}};},
       state: async () => { window.dockReads = (window.dockReads || 0) + 1; if (window.dockHold) return new Promise(resolve => window.dockResolve = resolve); if (window.dockOffline === 'payload') return { offline: true, error: window.dockSafeError || 'Unavailable' }; if (window.dockOffline) throw Error('Internal exception details'); return window.dockData; },
@@ -212,7 +212,7 @@ test('tray window changes synchronize pin, expansion and panel direction', async
   await expect(page.getByRole('button', { name: 'Open task panel', exact: true })).toBeVisible();
 });
 
-test('sleeping Pipeline Poke checks its owned job and shows the backend result', async ({ page }) => {
+test('sleeping Pipeline bell checks its owned job without a global success strip', async ({ page }) => {
   await page.clock.install();
   await setup(page);
   await page.evaluate(() => {
@@ -225,7 +225,8 @@ test('sleeping Pipeline Poke checks its owned job and shows the backend result',
   await expect(poke).toBeEnabled();
   await poke.click();
   expect(await page.evaluate(() => window.dockCalls)).toEqual(expect.arrayContaining([{ name: 'poke', body: { id: 'p1' } }]));
-  await expect(page.getByText('Monitoring resumed for the existing job.', { exact: true })).toBeVisible();
+  await expect(page.locator('.action-message')).toHaveCount(0);
+  await expect(poke).toBeEnabled();
   await page.evaluate(() => window.dockData.profiles[0].active = false);
   await page.clock.runFor(2500);
   await expect(poke).toHaveCount(0);
@@ -358,6 +359,14 @@ test('Pipeyard opens in dock with readable objects, notes and history; cow opens
  await page.evaluate(()=>window.pipeyardOffline=true);await page.getByRole('button',{name:'Refresh list',exact:true}).click();await expect(page.getByRole('button',{name:'Check now',exact:true})).toBeDisabled();await expect(page.getByText('external-42',{exact:true})).toBeVisible();
 });
 
+test('dock pipeline links open only by explicit click with a saved run ID and link selector',async({page})=>{
+ await setup(page);await page.evaluate(()=>{Object.assign(window.pipeyardData.runs[0],{ticketUrl:'https://tickets.example.test/ABC-1',pipelineUrl:'https://runs.example.test/one'});});
+ await page.getByRole('button',{name:'Pipeyard',exact:true}).click();await page.getByRole('button',{name:/Market report/}).click();
+ expect(await page.evaluate(()=>window.dockCalls.filter(c=>c.pipeyard==='open-link').length)).toBe(0);
+ await page.getByRole('button',{name:'Ticket / Jira ↗',exact:true}).click();await page.getByRole('button',{name:'Pipeline page ↗',exact:true}).click();
+ expect(await page.evaluate(()=>window.dockCalls.filter(c=>c.pipeyard==='open-link').map(c=>c.body))).toEqual([{id:'run-1',link:'ticket'},{id:'run-1',link:'pipeline'}]);
+});
+
 test('Pipeyard preserves drafts across tabs and checks a due selection only once',async({page})=>{
  await setup(page);await page.evaluate(()=>{window.pipeyardData.runs[0].checkDue=true;});await page.getByRole('button',{name:'Pipeyard',exact:true}).click();await page.getByRole('button',{name:/Market report/}).click();
  await expect.poll(()=>page.evaluate(()=>window.dockCalls.filter(c=>c.pipeyard==='action'&&c.body.action==='check-due').length)).toBe(1);
@@ -395,4 +404,9 @@ test('dock History delete confirms the displayed record and never deletes on can
  await setup(page);await page.evaluate(()=>{window.pipeyardData.runs[0].archived=true;window.pipeyardData.runs[0].updatedAt=123;});await page.getByRole('button',{name:'Pipeyard',exact:true}).click();await page.getByRole('button',{name:'History',exact:true}).click();await page.getByRole('button',{name:/Market report/}).click();
  await page.getByRole('button',{name:'Delete from History',exact:true}).click();await page.getByRole('button',{name:'Cancel deletion',exact:true}).click();expect(await page.evaluate(()=>window.dockCalls.filter(c=>c.pipeyard==='action'&&c.body.action==='delete').length)).toBe(0);
  await page.getByRole('button',{name:'Delete from History',exact:true}).click();await page.getByRole('button',{name:'Delete permanently',exact:true}).click();expect(await page.evaluate(()=>window.dockCalls.find(c=>c.pipeyard==='action'&&c.body.action==='delete').body)).toMatchObject({action:'delete',id:'run-1',confirmed:true,expectedUpdatedAt:123});
+});
+
+test('desktop renders projected endpoints and retries only unsaved busy cadence edits',async({page})=>{
+ await setup(page);await page.evaluate(()=>{const run=window.pipeyardData.runs[0];Object.assign(run,{intervalMinutes:5,deadline:Date.now()+3600000,stagePosition:{stage:'validation',currentIndex:8,total:8},responses:{status:null,progress:{mode:'custom',fields:[{label:'Phase',value:'Validation'}],source:'progress',fetchedAt:Date.now()}},responseVisibility:{status:'hidden',progress:'custom'},progressResponse:{data:{private:'LEGACY_SENTINEL'}}});let attempts=0;window.botRanch.pipeyard=async(kind,body)=>{window.dockCalls.push({pipeyard:kind,body});if(kind==='snapshot')return {result:window.pipeyardData};if(body.action==='set-check-interval'){if(++attempts===1)return {error:'Check is busy',code:'PIPEYARD_BUSY',retryable:true};run.intervalMinutes=body.intervalMinutes;}return {result:run};};});
+ await page.getByRole('button',{name:'Pipeyard',exact:true}).click();await page.getByRole('button',{name:/Market report/}).click();await expect(page.locator('.pipe-detail')).toContainText('Stage 8 of 8 — validation');await expect(page.locator('.pipe-detail')).toContainText('Response hidden by configuration');await expect(page.locator('.pipe-detail')).not.toContainText('LEGACY_SENTINEL');await page.getByLabel('Check frequency',{exact:true}).selectOption('0.5');await page.getByRole('button',{name:'Save frequency',exact:true}).click();await expect(page.locator('.pipe-detail')).toContainText('Saved frequency: 30 seconds');expect(await page.evaluate(()=>window.dockCalls.filter(c=>c.body?.action==='set-check-interval').length)).toBe(2);await expect(page.locator('.action-message')).toHaveCount(0);
 });

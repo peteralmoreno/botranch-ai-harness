@@ -4,6 +4,8 @@ const root=path.resolve(__dirname,'..'),port=43823;
 const {createCreatureStore}=require('./creature-store.cjs');
 const defaultCreatureFile=path.join(process.env.LOCALAPPDATA||path.join(os.homedir(),'AppData','Local'),'botRanch','pipeyard-preview','creatures.json');
 const files={
+ '/setup/pipeline-links.mjs':'sources/omp-bot-companion/setup/pipeline-links.mjs',
+ '/setup/pipeyard-intervals.mjs':'sources/omp-bot-companion/setup/pipeyard-intervals.mjs',
  '/setup/bot-palette.mjs':'sources/omp-bot-companion/setup/bot-palette.mjs',
  '/prototype/creatures.mjs':'designs/pipeyard/creatures.mjs',
  '/prototype/creature-behavior.mjs':'designs/pipeyard/creature-behavior.mjs',

@@ -40,7 +40,7 @@ let drag=null,suppressClickUntil=0;
 const announcement=document.createElement('p');announcement.className='reorder-status';announcement.setAttribute('role','status');announcement.setAttribute('aria-live','polite');pasture.before(announcement);
 const rows=()=>[...grid.querySelectorAll(':scope > .pipeline-row')];
 function arrange(){
- syncScope();const items=rows(),known=new Set(order);grid.style.setProperty('--column-count',String(Math.max(6,items.length)));grid.style.setProperty('--yard-span',Math.max(70,items.length*70/6)+'%');grid.style.minWidth=Math.max(672,items.length*112)+'px';for(const row of items)if(!known.has(row.dataset.runId)){order.push(row.dataset.runId);known.add(row.dataset.runId);}
+ syncScope();const items=rows(),known=new Set(order);grid.style.setProperty('--column-count',String(Math.max(8,items.length)));grid.style.setProperty('--yard-span',Math.max(70,items.length*70/8)+'%');grid.style.minWidth=Math.max(896,items.length*112)+'px';for(const row of items)if(!known.has(row.dataset.runId)){order.push(row.dataset.runId);known.add(row.dataset.runId);}
  const sorted=items.slice().sort((a,b)=>order.indexOf(a.dataset.runId)-order.indexOf(b.dataset.runId));
  const desired=sorted;
  if([...grid.children].some((row,i)=>row!==desired[i]))for(const row of desired)grid.append(row);
@@ -118,7 +118,7 @@ const creatures=await mountCreatures({loadState,saveState,layer:animalLayer,art:
  if(drag?.active){const box=pasture.getBoundingClientRect();const speed=drag.x<box.left+40?-9:drag.x>box.right-40?9:0;if(speed&&drag.y>box.top&&drag.y<box.bottom){pasture.scrollLeft+=speed;placeDragged();}}
 }});
 
-const animal=document.getElementById('yard-add-animal'),group=document.createElement('div'),add=document.createElement('button');group.className='yard-add-controls';add.type='button';add.textContent='＋ Pipeline';add.id='yard-add-pipeline';add.onclick=addPipeline;animal.before(group);group.append(animal,add);
+const animal=document.getElementById('yard-add-animal'),group=document.createElement('div'),add=document.getElementById('add-pipeline');group.className='yard-add-controls';animal.before(group);group.append(animal,add);
 animal.textContent='＋ Animal';animal.setAttribute('aria-label','＋ Add animal');
 $('active-view').textContent='Yard';$('active-view').setAttribute('aria-label','Active yard');
 const saveStatus=document.querySelector('.creature-save-status'),footer=document.querySelector('.yard-footer');if(saveStatus)footer.insertBefore(saveStatus,footer.lastElementChild);

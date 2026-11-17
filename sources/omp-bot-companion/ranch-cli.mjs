@@ -7,7 +7,7 @@ import { readPmSkill } from './pm-skill.mjs';
 import { validateOperateRequest } from './agent-api.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const usage = 'Usage: botRanch-cli.cmd skill|status|catalog|board|history|access [--json] | preview --file changes.json --actor label | apply --id CHANGESET_ID | operate --file action.json | release TASK_ID --revision N | start TASK_ID PROFILE_ID --revision N | context --file request.json | family --id FAMILY_ID | pipeyard snapshot|catalog [--json] | pipeyard action --file request.json | ring | wake';
+const usage = 'Usage: botRanch-cli.cmd skill|status|catalog|board|history|access [--json] | preview --file changes.json --actor label | apply --id CHANGESET_ID | operate --file action.json | release TASK_ID --revision N | start TASK_ID PROFILE_ID --revision N | context --file request.json | family --id FAMILY_ID | pipeyard snapshot|catalog [--json] | pipeyard action --file request.json | feed [--scope all|ranch|pipeyard] [--limit 20] [--since EPOCH_MS | --after CURSOR] [--json] | ring | wake';
 const validKey = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
 
 function argumentsOf(argv) {
@@ -19,7 +19,7 @@ function argumentsOf(argv) {
     if (item.startsWith('--')) {
       const name = item.slice(2);
       if (['json'].includes(name)) { options[name] = true; continue; }
-      if (!['file','actor','id','revision'].includes(name) || i + 1 >= rest.length || rest[i + 1].startsWith('--')) throw Error(`Invalid option: ${item}`);
+      if (!['file','actor','id','revision','scope','limit','since','after'].includes(name) || i + 1 >= rest.length || rest[i + 1].startsWith('--')) throw Error(`Invalid option: ${item}`);
       if (Object.hasOwn(options, name)) throw Error(`Option repeated: ${item}`);
       options[name] = rest[++i];
     } else positional.push(item);
@@ -75,6 +75,11 @@ export async function runCli(argv = process.argv.slice(2), { env = process.env, 
     }
     const credentials = privateCredentials(env); secrets.push(credentials.adminKey);
     const emit = value => output(value, streams, secrets);
+    if(command==='feed'){
+      if(positional.length||Object.keys(options).some(k=>!['scope','limit','since','after','json'].includes(k)))throw Error(usage);
+      const query=new URLSearchParams(Object.entries(options).filter(([k])=>k!=='json'));
+      emit(await request(credentials,'GET','/admin/ai/feed?'+query,undefined,fetchImpl));return 0;
+    }
     if(command==='pipeyard'){
       const operation=positional[0]||'snapshot';
       if(positional.length>1||!['snapshot','catalog','action'].includes(operation))throw Error('Use pipeyard snapshot|catalog|action --file request.json');

@@ -7,6 +7,14 @@ const {spawn} = require('node:child_process');
 const policy = require('./window-policy.cjs');
 const {RecoveryController}=require('./recovery-controller.cjs');
 const DESKTOP_VERSION=require('./package.json').version;
+let startupDiagnostics;
+function createStartupDiagnostics(write,{timeout=30000,setTimer=setTimeout,clearTimer=clearTimeout,onFailure=()=>{}}={}){
+ const events=[],started=Date.now(),allowed=new Set(['startup','renderer-ready','renderer-error','renderer-rejection','renderer-console-error','preload-error','did-fail-load','essential-load-failed','render-process-gone','mount-timeout','main-failure']);
+ let failed=false,ready=false;
+ function record(event){if(!allowed.has(event)||events.length>=32)return;if(!['startup','renderer-ready'].includes(event)){failed=true;onFailure(event);}events.push({event,elapsedMs:Math.max(0,Date.now()-started)});try{write(events.slice());}catch{/* Diagnostics must not prevent recovery or quitting. */}}
+ record('startup');const timer=setTimer(()=>{if(!ready)record('mount-timeout');},timeout);timer?.unref?.();
+ return {record,get failed(){return failed;},ready(){if(ready||failed)return;ready=true;clearTimer(timer);record('renderer-ready');},dispose(){clearTimer(timer);}};
+}
 
 const UNAVAILABLE = 'The companion is unavailable. Open Board or Settings to check its status.';
 function versionInfo(appDir, desktopVersion = DESKTOP_VERSION) {
@@ -44,7 +52,7 @@ function mapHealthPayload(payload, version, origin, lastSuccessAt) {
   const busy=payload.busy,compatible=payload.appVersion===version,status=compatible?'connected':busy?'busy-upgrade':'version-mismatch';
   return {status,message:compatible?'Bot Ranch companion is connected.':busy?'The companion version differs and active work must finish before an update.':'The companion version differs; a safe restart is available when idle.',origin,busy,...(Number.isSafeInteger(payload.pid)?{pid:payload.pid}:{}),instanceId:payload.instanceId,appVersion:payload.appVersion,...(typeof payload.homeFolder==='string'?{homeFolder:payload.homeFolder.slice(0,1024)}:{}),lastSuccessAt};
 }
-function createCompanionClient(credentials, fetchImpl = fetch, version = DESKTOP_VERSION) {
+function createCompanionClient(credentials, fetchImpl = fetch, version = DESKTOP_VERSION, openExternal = null) {
   let lastSuccessAt;
   async function request(route, body) {
     const response = await fetchImpl(credentials.origin + route, {
@@ -57,12 +65,29 @@ function createCompanionClient(credentials, fetchImpl = fetch, version = DESKTOP
       const payload = await response.json().catch(()=>null);
       const error = Error('Companion request failed.');
       error.status=response.status;
+      if(response.status===409&&payload?.code==='PIPEYARD_BUSY'&&payload?.retryable===true){error.code='PIPEYARD_BUSY';error.retryable=true;}
       if ([400,409].includes(response.status) && typeof payload?.error === 'string') error.userMessage = policy.redact(payload.error.slice(0,700),[credentials.adminKey,credentials.pairingKey]);
       throw error;
     }
     return policy.redact(await response.json(), [credentials.adminKey, credentials.pairingKey]);
   }
+  async function openSavedLink(selector){
+    try{
+      if(typeof openExternal!=='function')throw Error();
+      const {pipelineLink,visiblePipelineLinks}=await import(pathToFileURL(path.join(companionPaths(__dirname).root,'setup/pipeline-links.mjs')).href);
+      const snapshot=await request('/admin/pipeyard/snapshot');let url;
+      if(Object.hasOwn(selector,'url')){
+        url=pipelineLink(selector.url);
+        if(!snapshot.runs.some(run=>Object.values(visiblePipelineLinks(run)).includes(url)))throw Error();
+      }else{const run=snapshot.runs.find(run=>run.id===selector.id);url=pipelineLink(run?.[selector.link==='ticket'?'ticketUrl':'pipelineUrl']);}
+      if(!url||new URL(url).origin===credentials.origin)throw Error();
+      let decoded=url;try{decoded=decodeURIComponent(url);}catch{}
+      if(policy.redact(decoded,[credentials.adminKey,credentials.pairingKey])!==decoded||url.includes('[redacted]')||decoded.includes('[redacted]'))throw Error();
+      await openExternal(url);return {ok:true};
+    }catch{return {ok:false,error:'Could not open the saved pipeline link. Check its URL in Full Pipeyard.'};}
+  }
   return {
+    openSavedLink,
     async state() {
       try { return await request('/admin/state'); }
       catch { return {offline: true, error: UNAVAILABLE}; }
@@ -74,19 +99,21 @@ function createCompanionClient(credentials, fetchImpl = fetch, version = DESKTOP
     },
     async pipeyard(kind,body){
       try {
+        if(kind==='open-link'){if(!body||typeof body.id!=='string'||!['ticket','pipeline'].includes(body.link)||Object.keys(body).some(k=>!['id','link'].includes(k)))throw Error('Invalid link request.');return await openSavedLink(body);}
         if(kind==='snapshot')return {ok:true,result:await request('/admin/pipeyard/snapshot')};
-        const allowed=['create-manager','start-manager','check-yard','handoff','set-appearance','note','refresh','check-due','pause-tracking','resume-tracking','clear','restore','delete'];
+        const allowed=['set-check-interval','create-manager','start-manager','check-yard','handoff','set-appearance','note','refresh','check-due','pause-tracking','resume-tracking','clear','restore','delete'];
         if(kind!=='action'||!body||!allowed.includes(body.action))throw Error('Unsupported pipeline action.');
         const managerAction=['create-manager','start-manager','check-yard'].includes(body.action);if(!managerAction&&(typeof body.id!=='string'||!/^[a-zA-Z0-9_-]{1,160}$/.test(body.id)))throw Error('Unsupported pipeline action.');
         const input={action:body.action,...(!managerAction?{id:body.id}:{})};
         if(['start-manager','check-yard','handoff'].includes(body.action)&&body.managerId!==undefined){if(typeof body.managerId!=='string'||!/^[a-zA-Z0-9_-]{1,80}$/.test(body.managerId))throw Error('Choose a manager.');input.managerId=body.managerId;}
         if(['check-yard','handoff'].includes(body.action)&&body.brief!==undefined){if(typeof body.brief!=='string'||body.brief.length>4000)throw Error('Handoff brief is too long.');input.brief=body.brief;}
         if(body.action==='delete'){if(body.confirmed!==true||!Number.isSafeInteger(body.expectedUpdatedAt)||body.expectedUpdatedAt<0)throw Error('Confirm deletion of the current History entry.');input.confirmed=true;input.expectedUpdatedAt=body.expectedUpdatedAt;}
+        if(body.action==='set-check-interval'){const {intervals}=await import(pathToFileURL(path.join(companionPaths(__dirname).root,'setup/pipeyard-intervals.mjs')).href);if(!intervals.includes(body.intervalMinutes)||Object.keys(body).some(k=>!['action','id','intervalMinutes'].includes(k)))throw Error('Unsupported check frequency.');input.intervalMinutes=body.intervalMinutes;}
         if(body.action==='set-appearance'){if(body.shape!==undefined){if(!['standard','orchestrator','checkpoint','quick'].includes(body.shape))throw Error('Invalid pipe shape.');input.shape=body.shape;}if(body.color!==undefined){if(typeof body.color!=='string'||!/^#[a-f0-9]{6}$/i.test(body.color))throw Error('Invalid pipe color.');input.color=body.color;}if(input.shape===undefined&&input.color===undefined)throw Error('Choose a shape or color.');}
         if(body.action==='note'){if(typeof body.text!=='string'||!body.text.trim()||body.text.length>4000)throw Error('Use a note of 1 to 4000 characters.');input.text=body.text.trim();}
         if(body.action==='resume-tracking'){if(![10,20,40,60,120].includes(body.minutes))throw Error('Choose a supported monitoring budget.');input.minutes=body.minutes;}
         return {ok:true,result:await request('/admin/pipeyard/action',input)};
-      }catch(error){return {ok:false,error:error.userMessage||'The pipeline request could not be completed.'};}
+      }catch(error){return {ok:false,error:error.userMessage||'The pipeline request could not be completed.',...(error.code==='PIPEYARD_BUSY'?{code:error.code,retryable:true}:{})};}
     },
     async health(){try{const result=await request('/admin/health');lastSuccessAt=Date.now();return mapHealthPayload(result,version,credentials.origin,lastSuccessAt);}catch(error){return {status:error.status===401||error.status===403?'port-conflict':error.status?'unknown-service':/ECONNREFUSED/.test(String(error.cause?.message||error.message))?'offline':'unresponsive',origin:credentials.origin,lastSuccessAt,message:error.userMessage||'The companion health check did not complete.'};}},
     async shutdown(){try{await request('/admin/shutdown');return {ok:true};}catch(error){return {ok:false,status:error.status,error:error.userMessage||'The companion refused the shutdown request.'};}},
@@ -95,11 +122,12 @@ function createCompanionClient(credentials, fetchImpl = fetch, version = DESKTOP
 }
 
 async function boot() {
-  const {app, BrowserWindow, Menu, Tray, nativeImage, ipcMain, screen, session, clipboard} = require('electron');
+  const {app, BrowserWindow, Menu, Tray, nativeImage, ipcMain, screen, session, clipboard, shell} = require('electron');
   const override = process.env.BOT_RANCH_DESKTOP_DATA;
   if (override && !path.isAbsolute(override)) throw Error('Desktop data path must be absolute.');
   const dataDir = override || path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), '.config'), 'OmpBot', 'desktop');
   fs.mkdirSync(dataDir, {recursive: true});
+  startupDiagnostics=createStartupDiagnostics(events=>fs.writeFileSync(path.join(dataDir,'desktop-startup.json'),JSON.stringify(events)+'\n',{mode:0o600}));
   app.setPath('userData', dataDir);
   app.setName('botRanch Dock');
   if (!app.requestSingleInstanceLock()) { app.quit(); return; }
@@ -152,7 +180,7 @@ async function boot() {
     const url = policy.pageUrl(page, taskId, credentials);
     if (page === 'ranch') {await setMode('app');return {ok:true};}
     try {
-      if(!companionWindows)companionWindows=require('./companion-window.cjs').createCompanionWindows({BrowserWindow,Menu,session,screen,appDir,hidden:process.argv.includes('--test-hidden')});
+      if(!companionWindows)companionWindows=require('./companion-window.cjs').createCompanionWindows({BrowserWindow,Menu,session,screen,appDir,openExternal:url=>client?.openSavedLink({url}),hidden:process.argv.includes('--test-hidden')});
       await companionWindows.open(page==='settings'?'settings':page==='pipeyard'?'pipeyard':'board',url,credentials.origin);
       return {ok:true};
     } catch { return {ok:false,error:'Could not open the companion window.'}; }
@@ -167,7 +195,7 @@ async function boot() {
     if(mode!=='app')return;
     if(!credentials||starting||startupError)throw Error(UNAVAILABLE);
     if(!ranchWindow)ranchWindow=require('./ranch-window.cjs').createRanchWindow({
-      BrowserWindow,Menu,session,screen,appDir,credentials,getBounds:()=>ranchBounds,
+      BrowserWindow,Menu,session,screen,appDir,credentials,openExternal:url=>client?.openSavedLink({url}),getBounds:()=>ranchBounds,
       onBounds:bounds=>{ranchBounds=bounds;save();},isAppMode:()=>mode==='app',
       onIcue:()=>void setMode('icue'),onBoard:()=>void openPage('board'),onSettings:()=>void openPage('settings'),
       hidden:process.argv.includes('--test-hidden'),
@@ -204,6 +232,7 @@ async function boot() {
   app.on('second-instance', () => {show(); void (async()=>{await connect();if(mode==='app')await showRanch();})().catch(()=>{});});
   app.on('activate', show);
   app.on('before-quit', () => {
+    startupDiagnostics.dispose();
     quitting = true;
     clearTimeout(saveTimer);
     try { fs.writeFileSync(preferenceFile, JSON.stringify(preferences()) + '\n', {mode: 0o600}); } catch { /* Keep quit reliable. */ }
@@ -230,6 +259,12 @@ async function boot() {
   side = first.side;
   const {x, y, width, height} = first;
   win = new BrowserWindow(browserOptions(appDir, {x, y, width, height}, pinned));
+  win.webContents.on('did-fail-load',()=>startupDiagnostics.record('did-fail-load'));
+  win.webContents.on('preload-error',()=>startupDiagnostics.record('preload-error'));
+  win.webContents.on('render-process-gone',()=>startupDiagnostics.record('render-process-gone'));
+  win.webContents.on('console-message',(details,level)=>{if(details.level==='error'||level===3)startupDiagnostics.record('renderer-console-error');});
+  dockSession.webRequest.onErrorOccurred(details=>{if(details.webContentsId===win.webContents.id&&['script','stylesheet'].includes(details.resourceType))startupDiagnostics.record('essential-load-failed');});
+  ipcMain.on('bot-ranch:startup-status',(event,code)=>{if(policy.trustedSender(event,win.webContents,rendererUrl)&&['renderer-error','renderer-rejection'].includes(code))startupDiagnostics.record(code);});
   win.setMenu(null);
   win.webContents.setWindowOpenHandler(() => ({action: 'deny'}));
   win.webContents.on('will-navigate', event => event.preventDefault());
@@ -287,6 +322,18 @@ async function boot() {
   tray.on('click', () => win.isVisible() ? hide() : show());
   updateTray();
   await win.loadURL(rendererUrl);
+  // Navigation completion does not imply that React mounted. Verify the real dock
+  // and isolated preload without logging page content, URLs or exception text.
+  const deadline=Date.now()+30000;
+  async function checkMounted(){
+    if(win.isDestroyed()||Date.now()>deadline||startupDiagnostics.failed)return;
+    try{
+      const mounted=await win.webContents.executeJavaScript(`Boolean(document.querySelector('main[aria-label="botRanch floating dock"] button')&&window.botRanch&&typeof window.botRanch.state==='function'&&typeof window.botRanch.window==='function')`);
+      if(mounted){startupDiagnostics.ready();return;}
+    }catch{startupDiagnostics.record('renderer-error');return;}
+    const timer=setTimeout(()=>void checkMounted(),100);timer.unref();
+  }
+  void checkMounted();
 
   function connect() {
     if (connecting) return connecting;
@@ -303,7 +350,7 @@ async function boot() {
           ranchWindow = undefined;
         }
         credentials = nextCredentials;
-        client = createCompanionClient(credentials,fetch,app.getVersion());
+        client = createCompanionClient(credentials,fetch,app.getVersion(),url=>shell.openExternal(url));
         const {ensureCompanion} = await import(pathToFileURL(path.join(paths.root, 'companion-start.mjs')).href);
         const version = JSON.parse(fs.readFileSync(paths.manifest, 'utf8')).version;
         await ensureCompanion({origin: credentials.origin, token: credentials.adminKey, version, allowBusyVersion: true, start: () => new Promise((resolve, reject) => {
@@ -324,10 +371,11 @@ async function boot() {
   if(mode==='app')await showRanch().catch(()=>{});
 }
 
-module.exports = {browserOptions, companionPaths, createCompanionClient, mapHealthPayload, versionInfo};
+module.exports = {browserOptions, companionPaths, createCompanionClient, mapHealthPayload, versionInfo, createStartupDiagnostics};
 // Electron's entry loader need not make this module require.main (notably with
 // its inspector loader). Plain Node imports remain inert for policy tests.
 if (process.versions.electron && process.type === 'browser') boot().catch(() => {
+  startupDiagnostics?.record('main-failure');
   // Do not print exception details: startup paths may involve credentials.
   console.error('botRanch Dock could not start. Check the installed desktop files and try again.');
   require('electron').app.quit();

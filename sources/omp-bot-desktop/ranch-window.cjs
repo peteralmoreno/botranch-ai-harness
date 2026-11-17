@@ -1,7 +1,7 @@
 'use strict';
 const path = require('node:path');
 const {ranchPlacement} = require('./window-policy.cjs');
-const assets = new Set(['/ui/ranch-animals.js','/setup/yard-animal-art.mjs','/setup/bot-palette.mjs','/setup/pipeyard-ranch.mjs','/setup/pipeyard-ranch.css','/setup/yard-creatures.mjs','/setup/yard-creature-behavior.mjs','/pipeyard/','/setup/pipeyard.js','/setup/pipeyard.css','/setup/pipeyard-demo.mjs','/setup/pipeyard-feed.mjs','/ui/','/ui/app.js','/ui/widget.css','/ui/world.js','/ui/sprites.js','/ui/appearance.js','/ui/resources/icon.svg']);
+const assets = new Set(['/setup/pipeline-links.mjs','/setup/pipeyard-intervals.mjs','/ui/ranch-animals.js','/setup/yard-animal-art.mjs','/setup/bot-palette.mjs','/setup/pipeyard-ranch.mjs','/setup/pipeyard-ranch.css','/setup/yard-creatures.mjs','/setup/yard-creature-behavior.mjs','/pipeyard/','/setup/pipeyard.js','/setup/pipeyard.css','/setup/pipeyard-demo.mjs','/setup/pipeyard-feed.mjs','/ui/','/ui/app.js','/ui/widget.css','/ui/world.js','/ui/sprites.js','/ui/appearance.js','/ui/resources/icon.svg']);
 function allowedRequest(value, origin) {
   try {
     const url=new URL(value);
@@ -12,7 +12,7 @@ function allowedRequest(value, origin) {
 function ranchOptions(appDir, bounds) {
   return {...bounds,title:'botRanch · Desktop Ranch',icon:path.join(appDir,'icon.png'),frame:true,resizable:true,maximizable:true,minimizable:true,skipTaskbar:false,show:false,backgroundColor:'#202e2a',autoHideMenuBar:false,minWidth:Math.min(680,bounds.width),minHeight:Math.min(420,bounds.height),webPreferences:{partition:'bot-ranch-view',sandbox:true,contextIsolation:true,nodeIntegration:false,webSecurity:true,allowRunningInsecureContent:false,webviewTag:false,navigateOnDragDrop:false,spellcheck:false}};
 }
-function createRanchWindow({BrowserWindow,Menu,session,screen,appDir,credentials,getBounds,onBounds,isAppMode,onIcue,onBoard,onSettings,hidden=false}) {
+function createRanchWindow({BrowserWindow,Menu,session,screen,appDir,credentials,getBounds,onBounds,isAppMode,onIcue,onBoard,onSettings,openExternal,hidden=false}) {
   let win, loading;
   const ses=session.fromPartition('bot-ranch-view');
   ses.setPermissionRequestHandler((_web,_permission,callback)=>callback(false));
@@ -29,7 +29,7 @@ function createRanchWindow({BrowserWindow,Menu,session,screen,appDir,credentials
         {label:'Ranch',submenu:[{label:'A · Use iCUE widget',click:onIcue},{type:'separator'},{label:'Open Board',click:onBoard},{label:'Settings',click:onSettings},{type:'separator'},{label:'Close Ranch window',role:'close'}]},
         {label:'View',submenu:[{label:'Always on top',type:'checkbox',checked:false,click:item=>current.setAlwaysOnTop(item.checked)},{role:'reload'},{role:'resetZoom'},{role:'zoomIn'},{role:'zoomOut'},{role:'togglefullscreen'}]},
       ]));
-      current.webContents.setWindowOpenHandler(()=>({action:'deny'}));
+      current.webContents.setWindowOpenHandler(details=>{try{const target=new URL(details.url);if(target.origin!==credentials.origin&&['http:','https:'].includes(target.protocol))void Promise.resolve(openExternal?.(target.href)).catch(()=>{});}catch{}return {action:'deny'};});
       for(const event of ['will-navigate','will-redirect','will-attach-webview'])current.webContents.on(event,event=>event.preventDefault());
       current.webContents.on('will-frame-navigate',(event,details)=>{try{const target=new URL(typeof details==='string'?details:event.url);if(!event.isMainFrame&&target.origin===credentials.origin&&target.pathname==='/pipeyard/'&&!target.search&&!target.username&&!target.password)return;}catch{}event.preventDefault();});
       current.on('page-title-updated',event=>event.preventDefault());

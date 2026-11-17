@@ -6,7 +6,7 @@ import { readPmSkill } from './pm-skill.mjs';
 
 const catalog = JSON.parse(fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'agent-catalog.json'), 'utf8'));
 
-const routeNames = new Set(['/admin/ai/catalog','/admin/ai/skill','/admin/ai/snapshot','/admin/ai/preview','/admin/ai/apply','/admin/ai/access','/admin/ai/history','/admin/ai/operate','/admin/ai/context','/admin/ai/family']);
+const routeNames = new Set(['/admin/ai/feed','/admin/ai/catalog','/admin/ai/skill','/admin/ai/snapshot','/admin/ai/preview','/admin/ai/apply','/admin/ai/access','/admin/ai/history','/admin/ai/operate','/admin/ai/context','/admin/ai/family']);
 const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const statusFor = error => error?.code === 'conflict' ? 409 : error?.code === 'permission' ? 403 : 400;
 const profileFields = ['id','nickname','revision','folder','design','color','active','slot','autoPickup','preferredModel','readOnly','role','contextPolicy','personality','instructionsPath','busy','activityBusy','status','state','label','workCheckSupported','workCheckPending','lastSeen'];
@@ -32,7 +32,7 @@ export function validateOperateRequest(body) {
  * `persistTransaction` must call the manager's atomic authoritative commit hook.
  * `setAccess` and `operate` are native host integrations, never catalog-exposed routes.
  */
-export function createAgentApi({ manager, persistTransaction, setAccess, operate, getAccess = () => manager?.aiState?.access || 'inspect', now = Date.now }) {
+export function createAgentApi({ manager, persistTransaction, setAccess, operate, readFeed, getAccess = () => manager?.aiState?.access || 'inspect', now = Date.now }) {
   if (!manager) throw new TypeError('A live companion manager is required.');
   const previews = new Map();
 
@@ -58,9 +58,15 @@ export function createAgentApi({ manager, persistTransaction, setAccess, operate
 
   async function handle({ method, url, body }) {
     try {
-      if (!routeNames.has(url)) return { status: 404, body: { error: 'Not found.' } };
+      const feedRoute=url.split('?')[0]==='/admin/ai/feed';
+      if (!routeNames.has(url) && !feedRoute) return { status: 404, body: { error: 'Not found.' } };
       const access = getAccess();
       if (!['inspect','organize','operate'].includes(access)) return { status: 503, body: { error: 'AI Sync access state is invalid. Restore inspect access in Settings.' } };
+      if (feedRoute) {
+        if(method!=='GET')return {status:405,body:{error:'Feed is read-only.'}};
+        if(!readFeed)return {status:503,body:{error:'Feed is unavailable.'}};
+        return {status:200,body:await readFeed(new URL(url,'http://localhost').searchParams)};
+      }
       if (method === 'GET' && url === '/admin/ai/catalog') return { status: 200, body: catalog };
       if (method === 'GET' && url === '/admin/ai/skill') return { status: 200, body: readPmSkill() };
       if (method === 'GET' && url === '/admin/ai/access') return { status: 200, body: applyAccess() };

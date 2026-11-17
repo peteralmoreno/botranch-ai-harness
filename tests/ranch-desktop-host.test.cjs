@@ -5,6 +5,24 @@ const path = require('node:path');
 const filename = path.join(__dirname, '../sources/omp-bot-desktop/main.cjs');
 const host = fs.existsSync(filename) ? require(filename) : {};
 
+test('startup diagnostics time out without a mounted renderer and retain only bounded event codes',()=>{
+ const timers=[],writes=[];
+ assert.equal(typeof host.createStartupDiagnostics,'function');
+ const log=host.createStartupDiagnostics(value=>writes.push(value),{setTimer:fn=>{timers.push(fn);return timers.length;},clearTimer:()=>{},timeout:30000});
+ timers[0]();assert.equal(log.failed,true);assert.equal(writes.at(-1).at(-1).event,'mount-timeout');
+ for(let i=0;i<100;i++)log.record('renderer-error',{message:'secret credential private response'});
+ log.record('secret credential private response');log.ready();
+ assert.equal(log.failed,true);assert.ok(writes.at(-1).length<=32);
+ assert.doesNotMatch(JSON.stringify(writes),/secret|credential|private response/);
+ assert.equal(writes.at(-1).some(event=>event.event==='renderer-ready'),false);
+});
+test('successful mounted startup cancels its timeout while later renderer crashes remain fatal',()=>{
+ let cancelled=false;const writes=[];
+ const log=host.createStartupDiagnostics(value=>writes.push(value),{setTimer:()=>123,clearTimer:id=>{assert.equal(id,123);cancelled=true;}});
+ log.ready();assert.equal(cancelled,true);assert.equal(log.failed,false);assert.equal(writes.at(-1).at(-1).event,'renderer-ready');
+ log.record('render-process-gone');assert.equal(log.failed,true);
+});
+
 test('version information distinguishes the running app from a newly installed release', () => {
   const os = require('node:os');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ranch-version-info-'));

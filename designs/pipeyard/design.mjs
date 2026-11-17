@@ -6,8 +6,7 @@ document.body.classList.add('pipeyard-prototype');
 await import('/setup/pipeyard.js');
 
 const $=id=>document.getElementById(id);
-$('demo-banner').querySelector('strong').textContent='Design playground';
-$('demo-banner').querySelector('span').textContent='Raised pipes, wandering animals and a movable hay bale. Drag to rearrange the yard.';
+$('yard-mode').textContent='Demo';
 $('demo-exit').hidden=true;$('demo-exit').disabled=true;
 $('demo-reset').textContent='Reset playground';
 document.querySelector('.yard-caption').textContent='Drag pipes to reorder; click to inspect. Pick up animals or move the hay to invite nearby grazers. Arrow keys also move focused objects.';

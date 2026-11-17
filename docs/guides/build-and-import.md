@@ -13,6 +13,8 @@ npm run build:ranch
 
 `npm run build:ranch` creates `artifacts/releases/bot-ranch/bot-ranch-<version>.zip`, containing the desktop runtime, companion, iCUE widget, guides, licenses, and `SHA256SUMS.txt`. Packaging uses explicit file allowlists; never add live data or credentials to those lists.
 
+Before releasing, run `npm run test:desktop:packaged` against the exact complete ZIP with `BOT_RANCH_TEST_RELEASE_ZIP` and a known-good `BOT_RANCH_TEST_ROLLBACK_ZIP`. This Windows-only gate uses disposable installs and hidden windows; see [packaged verification](testing-and-troubleshooting.md#packaged-desktop-verification).
+
 Useful commands: `npm run test:unit`, `npm run test:browser`, `npm run test:build`, and `npm run preview` (visual Ranch on port 4173; no bot launch).
 
 Extract the complete ZIP and run its installer. See [installation](bot-ranch-install.md). Publish build artifacts as release assets, not Git-tracked files.

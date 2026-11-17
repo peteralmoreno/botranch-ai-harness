@@ -12,6 +12,14 @@ async function serverFixture(native={}){
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
  return {dir,manager,server,url:'http://127.0.0.1:'+server.address().port};
 }
+test('Settings copies Pipeyard storage, shows its path and preserves an unsaved folder draft',async({page})=>{
+ const {dir,server,url}=await serverFixture();try{
+  await page.goto(url+'/setup/#admin='+'b'.repeat(64));const folder=page.getByLabel('Pipeline and History folder',{exact:true});await expect(folder).not.toHaveValue('');
+  const destination=path.join(dir,'my-pipelines');await folder.fill(destination);await page.getByRole('heading',{name:'Pipeyard storage',exact:true}).click();await page.waitForTimeout(2200);await expect(folder).toHaveValue(destination);
+  await page.getByRole('button',{name:'Save Pipeyard folder',exact:true}).click();await expect(page.locator('#storage-current')).toHaveText(destination);expect(fs.existsSync(path.join(destination,'runs.json'))).toBe(true);
+  await page.reload();await expect(folder).toHaveValue(destination);await folder.fill('relative-path');await page.getByRole('button',{name:'Save Pipeyard folder',exact:true}).click();await expect(page.locator('#notice')).toContainText('absolute');await expect(page.locator('#storage-current')).toHaveText(destination);
+ }finally{server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
+});
 
 test('settings preserve a renamed manager and Farmer design through normal profile editing',async({page})=>{
  const {dir,manager,server,url}=await serverFixture();

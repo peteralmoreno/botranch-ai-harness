@@ -1,9 +1,12 @@
+import {legacyFields,validateMappings,validateResponses,resolveResponseConfig,readField,extractStagePosition} from './pipeyard-responses.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 
 export const terminal = status => ['succeeded','failed','cancelled'].includes(status);
 export const states = ['queued','running','paused','awaiting-approval','succeeded','failed','cancelled','unknown'];
-export const intervals = [1,5,10,30], budgets = [10,20,40,60,120];
+import {intervals,defaultIntervalMinutes} from './setup/pipeyard-intervals.mjs';
+export {intervals,defaultIntervalMinutes};
+export const budgets = [10,20,40,60,120];
 const operations = ['trigger','status','progress','say','approve','pause','resume'];
 const own = (o,k) => Object.hasOwn(o,k);
 export function object(value) { return !!value && typeof value==='object' && !Array.isArray(value); }
@@ -38,21 +41,20 @@ function validatePlatform(p) {
     if(Object.keys(op).some(k=>!['method','path','body'].includes(k)))throw Error('Unknown operation option. Use credential references, not custom headers.');
     ops[name]={method:op.method,path:op.path,...(op.body===undefined?{}:{body:jsonCopy(op.body)})};
   }
-  const fields={id:'id',status:'status',message:'message',progress:'progress',stages:'stages',notes:'notes',result:'result',cost:'cost_usd',...(p.fields||{})};
-  for(const [k,v] of Object.entries(fields))if(!['id','status','message','progress','stages','notes','result','cost'].includes(k)||typeof v!=='string'||v.length>200||v.split('.').some(s=>!s||['__proto__','constructor','prototype'].includes(s)))throw Error('Invalid response field mapping.');
+  const fields=validateMappings({...legacyFields,...(p.fields||{})}),responses=validateResponses(p.responses);
   const statuses=p.statuses||{};if(!object(statuses)||Object.values(statuses).some(s=>!states.includes(s)))throw Error('Status mappings must use supported Pipeyard states.');
-  if(Object.keys(p).some(k=>!['id','name','baseUrl','credential','operations','fields','statuses'].includes(k)))throw Error('Unknown platform field.');
-  return {id:p.id,name:text(p.name,100),baseUrl:url.href,credential:{...credential},operations:ops,fields,statuses:jsonCopy(statuses)};
+  if(Object.keys(p).some(k=>!['id','name','baseUrl','credential','operations','fields','statuses','responses'].includes(k)))throw Error('Unknown platform field.');
+  return {id:p.id,name:text(p.name,100),baseUrl:url.href,credential:{...credential},operations:ops,fields,responses,statuses:jsonCopy(statuses)};
 }
 export function validateConfig(input) {
   if(!object(input)||input.version!==1||!Array.isArray(input.platforms)||!Array.isArray(input.templates)||input.platforms.length>50||input.templates.length>200)throw Error('Config requires version 1, platforms and templates.');
   const platforms=input.platforms.map(validatePlatform),ids=new Set(platforms.map(p=>p.id));if(ids.size!==platforms.length)throw Error('Duplicate platform ID.');
   const templates=input.templates.map(t=>{
     if(!object(t)||!identifier(t.id)||!text(t.name,100)||!ids.has(t.platformId)||!/^#[a-fA-F0-9]{6}$/.test(t.color||''))throw Error('Template requires id, name, known platformId and hex color.');
-    if(!intervals.includes(t.intervalMinutes??5)||!budgets.includes(t.waitMinutes??60))throw Error('Unsupported polling interval or monitoring budget.');
+    if(!intervals.includes(t.intervalMinutes??defaultIntervalMinutes)||!budgets.includes(t.waitMinutes??60))throw Error('Unsupported polling interval or monitoring budget.');
     if(t.input!==undefined&&!object(t.input))throw Error('Template input must be a JSON object.');
-    if(Object.keys(t).some(k=>!['id','name','platformId','description','color','input','intervalMinutes','waitMinutes'].includes(k)))throw Error('Unknown template field.');
-    return {id:t.id,name:text(t.name,100),platformId:t.platformId,description:text(t.description),color:t.color,input:jsonCopy(t.input||{}),intervalMinutes:t.intervalMinutes??5,waitMinutes:t.waitMinutes??60};
+    if(Object.keys(t).some(k=>!['id','name','platformId','description','color','input','intervalMinutes','waitMinutes','responses'].includes(k)))throw Error('Unknown template field.');
+    return {id:t.id,name:text(t.name,100),platformId:t.platformId,description:text(t.description),color:t.color,input:jsonCopy(t.input||{}),responses:validateResponses(t.responses),intervalMinutes:t.intervalMinutes??defaultIntervalMinutes,waitMinutes:t.waitMinutes??60};
   });
   if(new Set(templates.map(t=>t.id)).size!==templates.length)throw Error('Duplicate template ID.');
   if(JSON.stringify(input).length>131072)throw Error('Configuration is too large.');
@@ -65,7 +67,7 @@ export function secretFor(platform,env=process.env) {
   if((c.env||c.file)&&(!value||/[\r\n]/.test(value)))throw Error('Configured credential is missing or invalid.');
   return value;
 }
-function field(value,lookup) {return lookup.split('.').reduce((v,k)=>object(v)&&own(v,k)?v[k]:undefined,value);}
+const field=readField;
 function interpolate(value,context) {
   if(typeof value==='string') {const m=/^\{\{([\w.]+)\}\}$/.exec(value);return m?field(context,m[1])??null:value;}
   if(Array.isArray(value))return value.map(v=>interpolate(v,context));
@@ -82,11 +84,14 @@ export async function callPlatform(platform,operation,{externalId='',input={},me
   if(op.method==='POST'){headers['Content-Type']='application/json';options.body=JSON.stringify(interpolate(op.body??(operation==='trigger'?'{{input}}':{message:'{{message}}',decision:'{{decision}}'}),{input,message,decision,runId:externalId}));}
   let response;
   try{response=await fetchImpl(url.href,options);}catch{throw Error('Platform request failed or timed out. Check the external platform before retrying a change.');}
-  if(!response.ok){const retry=response.headers.get('retry-after'),seconds=retry&&/^\d+$/.test(retry)?Number(retry):null,until=seconds!==null?now()+seconds*1000:Date.parse(retry||'');const error=Error('Platform returned HTTP '+response.status+'.');error.retryAt=Number.isFinite(until)?Math.max(now(),until):null;throw error;}
+  const retry=response.headers.get('retry-after'),seconds=retry&&/^\d+$/.test(retry)?Number(retry):null,until=seconds!==null?now()+seconds*1000:Date.parse(retry||''),retryAt=Number.isFinite(until)?Math.max(now(),until):null;
+  if(!response.ok)throw Object.assign(Error('Platform returned HTTP '+response.status+'.'),{retryAt:retryAt>now()?retryAt:null});
   let data,buffer='';
   try{if(response.body){const decoder=new TextDecoder();let bytes=0;for await(const chunk of response.body){bytes+=chunk.byteLength;if(bytes>1048576)throw Error();buffer+=decoder.decode(chunk,{stream:true});}buffer+=decoder.decode();}data=buffer?JSON.parse(buffer):{};}catch{throw Error('Platform response must be JSON under 1 MB.');}
   const clean=safe(data,[secret]);
-  const rawStatus=field(clean,platform.fields.status),status=own(platform.statuses,String(rawStatus))?platform.statuses[String(rawStatus)]:states.includes(rawStatus)?rawStatus:'unknown';
-  const id=field(clean,platform.fields.id),progress=field(clean,platform.fields.progress),cost=field(clean,platform.fields.cost);
-  return {response:clean,externalId:(typeof id==='string'||typeof id==='number')?String(id):'',status,message:text(field(clean,platform.fields.message)),progress:typeof progress==='number'&&Number.isFinite(progress)?Math.max(0,Math.min(100,progress)):null,stages:field(clean,platform.fields.stages)??[],platformNotes:field(clean,platform.fields.notes)??[],result:field(clean,platform.fields.result)??null,costUsd:typeof cost==='number'&&Number.isFinite(cost)&&cost>=0?cost:null};
+  const source=operation==='progress'?'progress':'status',rules=resolveResponseConfig(platform)[source],fields=rules.mappings;
+  const rawStatus=field(clean,fields.status),status=own(platform.statuses,String(rawStatus))?platform.statuses[String(rawStatus)]:states.includes(rawStatus)?rawStatus:'unknown';
+  const id=field(clean,fields.id),progress=field(clean,fields.progress),cost=field(clean,fields.cost),stagePosition=extractStagePosition(clean,fields.stagePosition);
+  const mapped={message:text(field(clean,fields.message)),progress:typeof progress==='number'&&Number.isFinite(progress)?Math.max(0,Math.min(100,progress)):null,stages:field(clean,fields.stages)??[],platformNotes:field(clean,fields.notes)??[],result:field(clean,fields.result)??null,costUsd:typeof cost==='number'&&Number.isFinite(cost)&&cost>=0?cost:null,stagePosition,stagePositionDiagnostic:fields.stagePosition&&object(typeof fields.stagePosition==='string'?field(clean,fields.stagePosition):clean)&&!stagePosition?'Stage position is unavailable or invalid.':''};
+  return {response:clean,source,retryAt,externalId:(typeof id==='string'||typeof id==='number')?String(id):'',status,...mapped,provenance:Object.fromEntries(Object.keys(mapped).map(k=>[k,source]))};
 }

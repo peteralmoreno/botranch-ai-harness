@@ -2,11 +2,11 @@
 const {ranchOptions}=require('./ranch-window.cjs');
 const {ranchPlacement}=require('./window-policy.cjs');
 const pages=new Set(['/board/','/setup/','/pipeyard/']);
-const assets=new Set(['/setup/bot-palette.mjs','/setup/pipeyard-ranch.mjs','/setup/pipeyard-ranch.css','/setup/yard-creatures.mjs','/setup/yard-creature-behavior.mjs','/setup/pipeyard-feed.mjs','/setup/pipeyard-demo.mjs','/setup/pipeyard.js','/setup/pipeyard.css','/setup/board.js','/setup/board.css','/setup/app.js','/setup/style.css','/setup/settings.css','/ui/sprites.js']);
-const routes=new Set(['pipeyard/creatures','pipeyard/snapshot','pipeyard/catalog','pipeyard/config','pipeyard/action','state','checks','key','control-key','control-key/revoke','profile/check-work','profile/ring-all','profiles/wake','profile/delete','profile/clean','library/import','role','pickup','task/start','profile','settings','action','task/queue','task/stop','task','task/archive','task/pipeline','task/retry','task/review','membership']);
+const assets=new Set(['/setup/pipeline-links.mjs','/setup/pipeyard-intervals.mjs','/setup/bot-palette.mjs','/setup/pipeyard-ranch.mjs','/setup/pipeyard-ranch.css','/setup/yard-creatures.mjs','/setup/yard-creature-behavior.mjs','/setup/pipeyard-feed.mjs','/setup/pipeyard-demo.mjs','/setup/pipeyard.js','/setup/pipeyard.css','/setup/board.js','/setup/board.css','/setup/app.js','/setup/style.css','/setup/settings.css','/ui/sprites.js']);
+const routes=new Set(['pipeyard/storage','pipeyard/preview','pipeyard/creatures','pipeyard/snapshot','pipeyard/catalog','pipeyard/config','pipeyard/action','state','checks','key','control-key','control-key/revoke','profile/check-work','profile/ring-all','profiles/wake','profile/delete','profile/clean','library/import','role','pickup','task/start','profile','settings','action','task/queue','task/stop','task','task/archive','task/pipeline','task/retry','task/review','membership']);
 function allowedRequest(value,origin){try{const u=new URL(value);return u.origin===origin&&!u.username&&!u.password&&!u.search&&(pages.has(u.pathname)||assets.has(u.pathname)||u.pathname.startsWith('/admin/')&&routes.has(u.pathname.slice(7)));}catch{return false;}}
 function allowedNavigation(value,origin){try{const u=new URL(value);return allowedRequest(value,origin)&&pages.has(u.pathname);}catch{return false;}}
-function createCompanionWindows({BrowserWindow,Menu,session,screen,appDir,hidden=false}){
+function createCompanionWindows({BrowserWindow,Menu,session,screen,appDir,openExternal,hidden=false}){
  const windows=new Map();
  const controller={async open(page,url,origin){
   const fragment=new URLSearchParams(new URL(url).hash.slice(1));
@@ -26,7 +26,7 @@ function createCompanionWindows({BrowserWindow,Menu,session,screen,appDir,hidden
   win=new BrowserWindow(options);windows.set(key,win);
   win.setMenu(Menu.buildFromTemplate([{label:'View',submenu:[{role:'reload'},{role:'resetZoom'},{role:'zoomIn'},{role:'zoomOut'},{role:'togglefullscreen'},{role:'close'}]}]));
   win.webContents.setWindowOpenHandler(details=>{
-   try{const target=new URL(details.url),hash=new URLSearchParams(target.hash.slice(1)),keys=[...hash.keys()];
+   try{const target=new URL(details.url);if(target.origin!==origin&&['http:','https:'].includes(target.protocol)){void Promise.resolve(openExternal?.(target.href)).catch(()=>{});return {action:'deny'};}const hash=new URLSearchParams(target.hash.slice(1)),keys=[...hash.keys()];
     if(page==='pipeyard'&&target.origin===origin&&target.pathname==='/pipeyard/'&&!target.search&&!target.username&&!target.password&&hash.get('admin')===fragment.get('admin')&&/^[a-zA-Z0-9_-]{1,160}$/.test(hash.get('run')||'')&&(keys.length===2&&keys.every(k=>['admin','run'].includes(k))||keys.length===3&&hash.get('demo')==='1'&&keys.every(k=>['admin','run','demo'].includes(k)))){setImmediate(()=>void controller.open('pipeyard',target.href,origin).catch(()=>{}));}
    }catch{}return {action:'deny'};
   });

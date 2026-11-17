@@ -1,6 +1,7 @@
 // Release inputs are explicit: runtime data and incidental local files cannot enter a release.
 const fs = require('node:fs');
 const path = require('node:path');
+const {createHash} = require('node:crypto');
 const { spawnSync } = require('node:child_process');
 const root = path.resolve(__dirname, '..');
 const projects = {
@@ -13,7 +14,7 @@ const widgetFiles = {
   desk: [...common, 'app.js', 'appearance.js', 'widget.css'],
 };
 const ranchFiles = [
-  'README.md', 'sounds/completion.wav', 'bridge.mjs', 'config.mjs', 'extension.mjs', 'focus.mjs', 'manager.mjs', 'pipeline.mjs', 'pipeline-manager.mjs', 'creature-store.cjs', 'pipeyard.mjs', 'pipeyard-adapter.mjs', 'pipeyard-api.mjs', 'pipeyard-managers.mjs', 'pipeyard-catalog.mjs', 'updates.mjs', 'runtime-policy.mjs', 'bot-library.mjs', 'bot-placement.mjs', 'queue-policy.mjs', 'pickup-policy.mjs', 'work-check.mjs', 'task-context.mjs', 'runtime-delivery.mjs', 'activity-feed.mjs', 'terminal-runner.mjs',
+  'README.md', 'sounds/completion.wav', 'bridge.mjs', 'config.mjs', 'extension.mjs', 'focus.mjs', 'manager.mjs', 'pipeline.mjs', 'pipeline-manager.mjs', 'creature-store.cjs', 'pipeyard.mjs', 'pipeyard-responses.mjs', 'recent-feed.mjs', 'setup/pipeline-links.mjs', 'setup/pipeyard-intervals.mjs', 'pipeyard-adapter.mjs', 'pipeyard-api.mjs', 'pipeyard-storage.mjs', 'pipeyard-managers.mjs', 'pipeyard-catalog.mjs', 'updates.mjs', 'runtime-policy.mjs', 'bot-library.mjs', 'bot-placement.mjs', 'queue-policy.mjs', 'pickup-policy.mjs', 'work-check.mjs', 'task-context.mjs', 'runtime-delivery.mjs', 'activity-feed.mjs', 'terminal-runner.mjs',
   'pm-skill.mjs', 'skills/bot-ranch-pm/SKILL.md', 'agent-api.mjs', 'agent-catalog.json', 'board-changes.mjs', 'ranch-cli.mjs', 'botRanch-cli.cmd', 'companion-health.mjs', 'companion-lock.mjs', 'lifecycle-log.mjs',
   'companion-start.mjs', 'install.mjs', 'Install-Shortcut.ps1', 'Install botRanch.cmd', 'Open botRanch.cmd', 'metadata.mjs', 'native.mjs', 'open-desktop.mjs', 'open-setup.mjs', 'preview.mjs', 'server.mjs', 'state.mjs',
   'Focus-Terminal.ps1', 'Terminal-Control.ps1', 'Start-Bot-Ranch.ps1', 'native/Terminal-Control.cs',
@@ -33,6 +34,7 @@ function copyFiles(source, destination, files) {
   }
 }
 function stageRanch(sources, destination, {desktop = false, runtime = true} = {}) {
+  if(fs.existsSync(destination)&&fs.readdirSync(destination).length)throw Error('Release output must be a fresh empty directory.');
   copyFiles(path.join(sources, 'omp-bot-companion'), destination, ranchFiles);
   copyFiles(root, destination, releaseDocs);
   const nativeFiles = require('./build-native.cjs').buildNative(path.join(destination), destination);
@@ -43,8 +45,10 @@ function stageRanch(sources, destination, {desktop = false, runtime = true} = {}
   copyFiles(path.join(sources, 'ranch-desk'), path.join(destination, 'desk'), widgetFiles.desk);
   const version = JSON.parse(fs.readFileSync(path.join(sources, 'omp-bot', 'manifest.json'), 'utf8')).version;
   const desktopFiles = desktop ? require('./build-desktop.cjs').stageDesktop(sources, path.join(destination, 'desktop'), {runtime}) : [];
-  fs.writeFileSync(path.join(destination, 'release.json'), JSON.stringify({version, files:[...ranchFiles,...releaseDocs,...nativeFiles,...ranchGuides.map(f=>'guides/'+f),...widgetFiles.ranch.map(f=>'ui/'+f),...widgetFiles.desk.map(f=>'desk/'+f),...desktopFiles]},null,2));
+  const files=[...ranchFiles,...releaseDocs,...nativeFiles,...ranchGuides.map(f=>'guides/'+f),...widgetFiles.ranch.map(f=>'ui/'+f),...widgetFiles.desk.map(f=>'desk/'+f),...desktopFiles];
+  fs.writeFileSync(path.join(destination, 'release.json'), JSON.stringify({version,files,hashes:releaseHashes(destination,files),...(desktop?{desktop:{runtime}}:{})},null,2));
 }
+function releaseHashes(directory,files){return Object.fromEntries(files.map(file=>[file,createHash('sha256').update(fs.readFileSync(path.join(directory,file))).digest('hex')]));}
 function addRanchBundleFiles(companion, widget, version) {
   const {createHash}=require('node:crypto');
   const widgetName=`iCUE/bot-ranch-${version}.icuewidget`;
@@ -66,6 +70,7 @@ Checksums: SHA256SUMS.txt
   const manifestPath=path.join(companion,'release.json'),manifest=JSON.parse(fs.readFileSync(manifestPath,'utf8'));
   if(manifest.version!==version)throw Error('Bundle and companion versions must match.');
   manifest.files=[...new Set([...manifest.files,widgetName,'START-HERE.txt'])];
+  manifest.hashes=releaseHashes(companion,manifest.files);
   fs.writeFileSync(manifestPath,JSON.stringify(manifest,null,2));
   const sums=[...manifest.files,'release.json'].sort().map(file=>createHash('sha256').update(fs.readFileSync(path.join(companion,file))).digest('hex')+'  '+file);
   fs.writeFileSync(path.join(companion,'SHA256SUMS.txt'),sums.join('\n')+'\n');

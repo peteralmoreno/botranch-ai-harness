@@ -8,8 +8,8 @@ async function fixture(){
 }
 test('agent template save validates known platforms and publishes accurate scoped limits',async()=>{
  const f=await fixture();const t=await f.yard.execute('save-template',{template:f.template});assert.equal(t.id,'report');assert.equal(f.calls.length,0);
- assert.equal(f.yard.snapshot().limits.demo.visibleRuns,6);assert.equal(f.yard.snapshot().limits.live.runCount,null);assert.equal(f.yard.snapshot().limits.live.templates,200);
- await assert.rejects(f.yard.execute('save-template',{template:{...f.template,platformId:'missing'}}));await assert.rejects(f.yard.execute('save-template',{template:{...f.template,intervalMinutes:2}}));assert.equal(f.yard.snapshot().templates.length,1);
+ assert.equal(f.yard.snapshot().limits.demo.visibleRuns,8);assert.equal(f.yard.snapshot().limits.live.runCount,null);assert.equal(f.yard.snapshot().limits.live.templates,200);
+ await assert.rejects(f.yard.execute('save-template',{template:{...f.template,platformId:'missing'}}));await assert.rejects(f.yard.execute('save-template',{template:{...f.template,intervalMinutes:1.5}}));assert.equal(f.yard.snapshot().templates.length,1);
  const {Pipeyard}=await import('../sources/omp-bot-companion/pipeyard.mjs');assert.equal(new Pipeyard({root:f.root}).snapshot().templates[0].id,'report');
  f.yard.config.templates=Array.from({length:200},(_,i)=>({...t,id:'t'+i}));await assert.rejects(f.yard.execute('save-template',{template:f.template}),/200|limit/i);
 });

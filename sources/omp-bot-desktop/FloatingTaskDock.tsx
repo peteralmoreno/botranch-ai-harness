@@ -10,7 +10,7 @@ type WindowInfo = { expanded: boolean; pinned: boolean; side: 'left' | 'right'; 
 declare global {
   interface Window {
     botRanch: {
-      pipeyard(kind:'snapshot'|'action',body?:object): Promise<Reply>;
+      pipeyard(kind:'snapshot'|'action'|'open-link',body?:object): Promise<Reply&{code?:string;retryable?:boolean}>;
       state(): Promise<RanchState>;
       action(name: string, body: object): Promise<Reply>;
       openPage(page: 'board' | 'settings' | 'ranch' | 'new-task' | 'pipeyard', taskId?: string): Promise<Reply>;
@@ -40,6 +40,7 @@ export default function FloatingTaskDock() {
   const [creating, setCreating] = useState(false);
   const [bankRequested,setBankRequested] = useState(false);
   const [message, setMessage] = useState('');
+  const [pickupError,setPickupError]=useState('');
   const [busy, setBusy] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [changingWindow, setChangingWindow] = useState(false);
@@ -191,14 +192,14 @@ export default function FloatingTaskDock() {
   const run = async (name:string, body:object, success?:string) => {
     if (!online || busy) throw Error('Wait for the companion or current action.');
     setBusy(name);setMessage('');
-    try {const reply=checkReply(await window.botRanch.action(name,body));setMessage(reply.result?.message||success||'Updated.');refresh.current();return reply.result;}
-    catch(error){const message=error instanceof Error?error.message:'Action failed.';setMessage(message);throw Error(message);}
+    try {const reply=checkReply(await window.botRanch.action(name,body));refresh.current();return reply.result;}
+    catch(error){const message=error instanceof Error?error.message:'Action failed.';throw Error(message);}
     finally{setBusy(null);}
   };
   const tasks=(data?.tasks||[]).filter(t=>!t.archived),profiles=data?.profiles||[];
   const activeCount=tasks.filter(t=>t.status!=='done').length,reviewCount=tasks.filter(t=>t.status==='review').length;
   const disabled=!online||busy!==null;
-  const chooseTab=(next:Tab)=>{setTab(next);setCreating(false);setBankRequested(false);if(!info.expanded)void expand(true);};
+  const chooseTab=(next:Tab)=>{setMessage('');setTab(next);setCreating(false);setBankRequested(false);if(!info.expanded)void expand(true);};
   const newTask=()=>{chooseTab('tasks');setCreating(true);};
   const tooltip=(text:string)=><span className="dock-tooltip" aria-hidden="true">{text}</span>;
   const popout=(page:'board'|'settings',id?:string)=>{void openPage(page,id);};
@@ -206,10 +207,10 @@ export default function FloatingTaskDock() {
   const panelProps={data,disabled,run,popout};
   return <LayoutGroup id={groupId}>
     <main className={`dock-shell ${info.expanded?'is-expanded':''} is-${info.length||'short'} expands-${info.side}`} aria-label="botRanch floating dock">
-      <div className="dock-rail">
+      <div className="dock-rail">{message&&<aside className="dock-control-error" role="alert"><span>{message}</span><button className="small-button" aria-label="Dismiss control error" onClick={()=>setMessage('')}><X size={12}/></button></aside>}
         <button className={`dock-grip ${dragging?'is-dragging':''}`} aria-label="Move dock. Arrow keys move; Shift moves farther." title="Drag to move. Arrow keys reposition." onPointerDown={startDrag} onPointerMove={drag} onPointerUp={stopDrag} onPointerCancel={stopDrag} onLostPointerCapture={stopDrag} onKeyDown={handleMoveKey}><GripVertical size={17}/></button>
         <button ref={expandRef} className="dock-brand" aria-label={info.expanded?'Collapse task panel':'Open task panel'} aria-controls={panelId} aria-expanded={info.expanded} onClick={()=>void expand(!info.expanded)} disabled={changingWindow}>{info.expanded?<PanelLeftClose size={23} aria-hidden="true"/>:<PanelLeftOpen size={23} aria-hidden="true"/>}{tooltip(info.expanded?'Collapse panel':'Expand panel')}</button>
-        <nav className="dock-tabs" aria-label="Dock views">{tabs.map(({id,label,Icon})=><div className="dock-tab-wrap" key={id}>{tab===id&&<><motion.div className="dock-active" layoutId="activeIndicator" transition={transition}/><motion.div className="dock-active-edge" layoutId="activeEdgeGlow" transition={transition}/></>}<button className={`dock-icon ${tab===id?'is-active':''}`} aria-label={label} aria-pressed={tab===id} onClick={()=>chooseTab(id)}><Icon size={20}/>{id==='tasks'&&reviewCount>0&&<span className="dock-count">{Math.min(99,reviewCount)}</span>}{tooltip(label)}</button></div>)}<div className="dock-tab-wrap"><button className="dock-icon" aria-label="Open Ranch app" onClick={()=>void openPage('ranch')}><PipeyardIcon/>{tooltip('Open Ranch app')}</button></div></nav>
+        <nav className="dock-tabs" aria-label="Dock views">{tabs.map(({id,label,Icon})=><div className="dock-tab-wrap" key={id}>{tab===id&&<><motion.div className="dock-active" layoutId="activeIndicator" transition={transition}/></>}<button className={`dock-icon ${tab===id?'is-active':''}`} aria-label={label} aria-pressed={tab===id} onClick={()=>chooseTab(id)}><Icon size={20}/>{id==='tasks'&&reviewCount>0&&<span className="dock-count">{Math.min(99,reviewCount)}</span>}{tooltip(label)}</button></div>)}<div className="dock-tab-wrap"><button className="dock-icon" aria-label="Open Ranch app" onClick={()=>void openPage('ranch')}><PipeyardIcon/>{tooltip('Open Ranch app')}</button></div></nav>
         <div className="dock-divider"/><button className="dock-icon dock-add" aria-label="New task" disabled={!online} onClick={newTask}><Plus size={23}/>{tooltip('New task')}</button>
         <div className="dock-mini-row"><button className="dock-mini" aria-label={info.length==='long'?'Use short dock':'Use long sidebar'} onClick={()=>void native('length',info.length==='long'?'short':'long')}>{info.length==='long'?<Minimize2 size={16}/>:<Maximize2 size={16}/>} {tooltip(info.length==='long'?'Short dock':'Long sidebar')}</button><button className="dock-mini" aria-label="Open settings" onClick={()=>popout('settings')}><Settings size={16}/>{tooltip('Settings')}</button></div>
         <div className="dock-mini-row"><button className="dock-mini" aria-label={info.pinned?'Unpin dock':'Pin dock above windows'} aria-pressed={info.pinned} onClick={()=>void native('pin',!info.pinned)}>{info.pinned?<Pin size={15}/>:<PinOff size={15}/>}</button><button className="dock-mini" aria-label="Hide dock" onClick={()=>void native('hide')}><X size={16}/>{tooltip('Hide to tray')}</button></div>
@@ -219,7 +220,7 @@ export default function FloatingTaskDock() {
         <button className="panel-resize" aria-label="Resize panel. Left and right arrows change width; up and down change height." title="Drag to resize. Arrow keys adjust size; Shift adjusts faster." onPointerDown={startResize} onPointerMove={dragResize} onPointerUp={stopResize} onPointerCancel={stopResize} onLostPointerCapture={stopResize} onKeyDown={resizeKey}><Grip size={15}/></button>
         <header className="panel-header"><div><p className="panel-brand">botRanch <span className="desktop-label">{info.length==='long'?'Long sidebar':'Short dock'}</span></p><h1>{tabs.find(t=>t.id===tab)?.label}</h1><p className="panel-summary">{tab==='pipeyard'?'Pipeline status, notes and saved objects':`${activeCount} open tasks · ${profiles.filter(p=>p.active).length} residents`}</p></div><div className="panel-header-actions"><button className="small-button" aria-label="Open AI Sync" title="AI Sync" onClick={()=>void openAiSync()}><Sparkles size={16}/></button><button className="small-button panel-collapse" aria-label="Collapse panel" onClick={()=>void expand(false)}>{info.side==='right'?<ChevronLeft size={18}/>:<ChevronRight size={18}/>}</button></div></header>
         {!online&&<div className="connection-notice" role="status"><WifiOff size={14}/><span>{data?'Offline · showing last state, read-only':checkedConnection?'Offline · companion unavailable':'Starting or reconnecting to companion...'}{offlineReason&&<span className="offline-reason">{offlineReason}</span>}<button className="text-button recovery-link" onClick={()=>void openRecovery()}>Connection &amp; recovery</button></span></div>}
-        {tab!=='pipeyard'&&<div className="pickup-row"><span><span className={`status-dot ${data?.pickupPaused===false?'running':''}`}/>Pickup {data?data.pickupPaused?'paused':'running':'unavailable'}</span><button className="text-button" aria-label={data?.pickupPaused===false?'Pause pickup':'Resume pickup'} disabled={disabled} onClick={()=>void run('pickup',{paused:!data?.pickupPaused},'Pickup updated.').catch(()=>{})}>{data?.pickupPaused===false?<Pause size={12}/>:<Play size={12}/>} {data?.pickupPaused===false?'Pause':'Resume'}</button></div>}
+        {tab!=='pipeyard'&&<div className="pickup-row"><span><span className={`status-dot ${data?.pickupPaused===false?'running':''}`}/>Pickup {data?data.pickupPaused?'paused':'running':'unavailable'}</span><button className="text-button" aria-label={data?.pickupPaused===false?'Pause pickup':'Resume pickup'} disabled={disabled} onClick={()=>void run('pickup',{paused:!data?.pickupPaused}).then(()=>setPickupError('')).catch(error=>setPickupError(error.message))}>{data?.pickupPaused===false?<Pause size={12}/>:<Play size={12}/>} {data?.pickupPaused===false?'Pause':'Resume'}</button>{pickupError&&<span className="field-error" role="alert">{pickupError}</span>}</div>}
         <div className="panel-scroll" key={tab}>
           {tab==='pipeyard'&&<PipeyardPanel drafts={pipelineDrafts.current} connected={online} popout={taskId=>void openPage(taskId?'board':'pipeyard',taskId)} openRanch={()=>void openPage('ranch')}/>}
           {tab==='tasks'&&<BoardPanel attentionRequest={attentionRequest} {...panelProps} creating={creating} onCreating={setCreating}/>}
@@ -227,7 +228,7 @@ export default function FloatingTaskDock() {
           {tab==='factory'&&<FactoryPanel {...panelProps} onBank={()=>{setTab('bots');setBankRequested(true);}}/>}
           {tab==='updates'&&(data?.updates.length?[...data.updates].sort((a,b)=>b.at-a.at).slice(0,30).map(update=><article className="update-row" key={update.id}><div className="update-heading"><strong>{profiles.find(p=>p.id===update.profileId)?.nickname||'Bot'}</strong><time dateTime={new Date(update.at).toISOString()}>{age(update.at)}{update.source==='activity'?' - Activity':''}</time></div><p>{update.text}</p>{update.taskId&&<button className="text-button" disabled={!online} onClick={()=>popout('board',update.taskId)}>View task <ArrowUpRight size={12}/></button>}</article>):<div className="empty-state"><Bell size={24}/><p>No updates yet.</p><span>Bot progress will appear here.</span></div>)}
         </div>
-        {message&&<div className="action-message" role="status"><span>{message}</span><button className="small-button" aria-label="Dismiss message" onClick={()=>setMessage('')}><X size={12}/></button></div>}
+
         {info.updatePending&&<div className="connection-notice" role="status">v{info.installedVersion} installed. Choose “Quit desktop app” in the tray menu, then reopen botRanch from Start. Current app: v{info.desktopVersion}.</div>}
         <div className="panel-versions" aria-label="App versions"><span>App {info.desktopVersion?`v${info.desktopVersion}`:'version unavailable'} · Companion {online&&data?.appVersion?`v${data.appVersion}`:online?'version unavailable':'offline'}</span><button className="text-button" onClick={()=>void openRecovery()}>Versions &amp; recovery</button></div>
         <div className="display-mode"><label htmlFor="ranch-display-mode">Ranch display</label><select id="ranch-display-mode" value={info.mode||'icue'} onChange={e=>void native('mode',e.target.value as 'icue'|'app')}><option value="icue">A · iCUE widget</option><option value="app">B · Desktop app</option></select></div>
