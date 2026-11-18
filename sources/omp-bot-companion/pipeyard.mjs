@@ -1,9 +1,10 @@
+import {effectiveAdapter,configurationView,settingsPreview,targetSettings,endpointDiagnostics,progressFreshness,summarize} from './pipeyard-settings.mjs';
 import {pipelineLinks,visiblePipelineLinks} from './setup/pipeline-links.mjs';
 import {resolveResponseConfig,projectResponse} from './pipeyard-responses.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import {randomUUID,createHash} from 'node:crypto';
-import {validateConfig,callPlatform,secretFor,safe,text,terminal,budgets,intervals} from './pipeyard-adapter.mjs';
+import {validateConfig,callPlatform,extractObservation,secretFor,safe,text,terminal,budgets,intervals} from './pipeyard-adapter.mjs';
 import {validateAction,pipeyardLimits,limitError} from './pipeyard-catalog.mjs';
 
 const copy=v=>JSON.parse(JSON.stringify(v));
@@ -13,11 +14,11 @@ export const exampleConfig={version:1,platforms:[{id:'example',name:'Example pla
 
 export class Pipeyard {
  constructor({root,now=Date.now,fetchImpl=fetch,env=process.env}) {
-  this.root=root;this.now=now;this.fetchImpl=fetchImpl;this.env=env;this.locks=new Set();this.registerLocks=new Set();this.requestLocks=new Set();this.ticking=false;
+  this.knownSecrets=new Set();this.root=root;this.now=now;this.fetchImpl=fetchImpl;this.env=env;this.locks=new Set();this.registerLocks=new Set();this.requestLocks=new Set();this.ticking=false;
   fs.mkdirSync(root,{recursive:true});this.configFile=path.join(root,'config.json');this.stateFile=path.join(root,'runs.json');
   this.config=fs.existsSync(this.configFile)?this.loadConfig():{version:1,platforms:[],templates:[]};
   const state=fs.existsSync(this.stateFile)?JSON.parse(fs.readFileSync(this.stateFile,'utf8')):{version:1,runs:[]};if(state.version!==1||!Array.isArray(state.runs))throw Error('Unsupported Pipeyard state.');
-  this.runs=state.runs;this.boardAppearances=state.boardAppearances||{};this.deletedRuns=state.deletedRuns||[];
+  this.runs=state.runs;this.rememberSecrets();this.boardAppearances=state.boardAppearances||{};this.deletedRuns=state.deletedRuns||[];
   let migrated=state.responseSchema!==1;
   for(const run of this.runs){
    run.responses??={};run.responseAttempts??={};run.intervalMinutes??=5;
@@ -29,58 +30,116 @@ export class Pipeyard {
  }
  write(file,value){fs.writeFileSync(file+'.tmp',JSON.stringify(value,null,2),{mode:0o600});fs.renameSync(file+'.tmp',file);}
  persist(){this.write(this.stateFile,{version:1,responseSchema:1,runs:this.runs,boardAppearances:this.boardAppearances,deletedRuns:this.deletedRuns});}
- configure(input){const config=validateConfig(input);this.write(this.configFile,config);this.config=config;return this.configuration();}
+ configure(input){const config=validateConfig(input);this.write(this.configFile,config);this.config=config;this.rememberSecrets();return this.configuration();}
  preview(body){
   if(!body||Object.keys(body).some(k=>!['config','templateId','source','sample'].includes(k))||!['status','progress'].includes(body.source))throw Error('Invalid response preview.');
   const config=validateConfig(body.config),template=config.templates.find(t=>t.id===body.templateId);if(!template)throw Error('Choose a template to preview.');
   const platform=config.platforms.find(p=>p.id===template.platformId),rules=resolveResponseConfig(platform,template);let secret='';try{secret=secretFor(platform,this.env);}catch{}
-  return projectResponse({id:'preview',source:body.source,fetchedAt:this.now(),data:safe(body.sample??null,[secret]),review:null},rules[body.source].desk);
+  const adapter=effectiveAdapter(platform,template),clean=safe(body.sample??null,[secret]),result=extractObservation(adapter,body.source,clean),run={adapter,status:result.status,...result};
+  const rule=rules[body.source],visible=rule.desk.mode==='raw',selected=key=>visible||rule.desk.mode==='custom'&&rule.desk.fields.some(f=>f.path===rule.mappings[key]),summary=summarize(run,{stageName:selected('stageName')?result.stageName:'',stagePosition:visible?result.stagePosition:null,displayProgress:result.progress,progressSource:'platform'});
+  return safe({...projectResponse({id:'preview',source:body.source,fetchedAt:this.now(),data:clean,review:null},rules[body.source].desk),summary,diagnostics:result.diagnostics},[secret]);
  }
+ async testConnection(body){
+  if(!body||Object.keys(body).some(k=>!['config','templateId','externalId'].includes(k))||typeof body.externalId!=='string'||!body.externalId.trim()||body.externalId.length>500)throw Error('Provide a template and external ID for the read-only connection test.');
+  const config=validateConfig(body.config),template=config.templates.find(t=>t.id===body.templateId);if(!template)throw Error('Choose a template to test.');
+  const platform=config.platforms.find(p=>p.id===template.platformId),adapter=effectiveAdapter(platform,template),secret=secretFor(adapter,this.env);if(safe(body.externalId,[secret])!==body.externalId)throw Error('Invalid external ID.');
+  const run={id:'connection-test',adapter,externalId:body.externalId,templateId:template.id,platformId:platform.id,input:{},status:'unknown',tracking:'paused',intervalMinutes:template.intervalMinutes,waitMinutes:template.waitMinutes,responses:{},responseAttempts:{},events:[],notes:[]};
+  let retryAt=null;
+  for(const source of ['status','progress']){
+   if(source==='progress'&&(!adapter.operations.progress||!adapter.monitoring.progress))continue;
+   if(retryAt>this.now()){run.endpointSkipped={progress:'Waiting for the platform retry boundary.'};break;}
+   try{const result=await this.call(run,source);retryAt=result.retryAt;if(source==='status')this.observation(run,result);else this.observation(run,{...result,status:run.status,costUsd:run.costUsd});}catch(error){retryAt=error.retryAt??null;}
+  }
+  const view=this.publicRun(run);return Object.fromEntries(['responses','summary','endpointDiagnostics','progressFreshness','status','progress','stagePosition','stageName'].map(k=>[k,view[k]]));
+ }
+ previewSettings(run){const preview=this.publicSettings(settingsPreview(run,this.config));if(this.locks.has(run.id))return {...preview,canApply:false,reason:'Run is busy; retry after the current check.'};return preview;}
+ applySettings(run,body){
+  const preview=settingsPreview(run,this.config);
+  if(body.expectedRevision!==preview.currentRevision||body.targetRevision!==preview.targetRevision)throw Object.assign(Error('Settings changed. Preview the latest settings again.'),{status:409,code:'PIPEYARD_SETTINGS_CHANGED'});
+  if(!preview.canApply)throw Error(preview.reason);
+  const previous=copy(run),target=targetSettings(run,this.config),oldRules=resolveResponseConfig(run.adapter),newRules=resolveResponseConfig(target.adapter);
+  try{
+   run.valueVisibility??={};for(const key of ['message','progress','stagePosition','stageName','stages','platformNotes','result'])run.valueVisibility[key]??=copy(oldRules[run.provenance?.[key]||'status'].desk);
+   if(Object.values(oldRules).some(r=>r.desk.mode!=='raw'))for(const event of run.events||[])event.private=true;
+   // Only read operations are adopted. Credentials, mutation operations and identity stay pinned.
+   const operations={...run.adapter.operations};for(const source of ['status','progress']){if(target.adapter.operations[source])operations[source]=copy(target.adapter.operations[source]);else delete operations[source];}
+   run.adapter={...run.adapter,operations,responses:newRules,fields:copy(target.adapter.fields),statuses:copy(target.adapter.statuses),monitoring:copy(target.adapter.monitoring),summary:copy(target.adapter.summary)};
+   run.intervalMinutes=target.intervalMinutes;run.waitMinutes=target.waitMinutes;
+   for(const source of ['status','progress']){
+    const invalid=fingerprint(oldRules[source])!==fingerprint(newRules[source])||fingerprint(previous.adapter.operations[source]||null)!==fingerprint(operations[source]||null)||source==='progress'&&!run.adapter.monitoring.progress;
+    if(!invalid)continue;
+    const record=run.responses?.[source],endpointChanged=fingerprint(previous.adapter.operations[source]||null)!==fingerprint(operations[source]||null),visibilityWidened=oldRules[source].desk.mode!=='raw'&&fingerprint(oldRules[source].desk)!==fingerprint(newRules[source].desk);
+    if(record){if(record.review&&oldRules[source].desk.mode!=='raw')record.review.private=true;record.settingsChanged=true;if(endpointChanged||visibilityWidened)record.projectionBlocked=true;}
+    const disabled=source==='progress'&&!run.adapter.monitoring.progress;
+    const mappingChanged=fingerprint({mappings:oldRules[source].mappings,scale:oldRules[source].progressScale})!==fingerprint({mappings:newRules[source].mappings,scale:newRules[source].progressScale});
+    if(record&&!endpointChanged&&!disabled&&mappingChanged){const extracted=extractObservation(run.adapter,source,record.data);for(const key of ['message','progress','stagePosition','stageName','stages','platformNotes','result'])if(((run.provenance?.[key]||'status')===source||source==='progress')&&extracted[key]!==null&&extracted[key]!==undefined&&extracted[key]!==''&&(!Array.isArray(extracted[key])||extracted[key].length)){run[key]=extracted[key];run.provenance??={};run.provenance[key]=source;run.observedAt??={};run.observedAt[key]=record.fetchedAt;} }
+   }
+   run.nextCheckAt=run.externalId&&!run.archived&&!terminal(run.status)&&run.tracking==='active'&&this.now()<run.deadline?Math.max(this.now(),(run.lastCheckedAt??this.now())+run.intervalMinutes*60000,run.retryAt??0):null;
+   this.entry(run,'settings','Updated local monitoring and display settings.');this.persist();return this.publicRun(run);
+  }catch(error){for(const key of Object.keys(run))delete run[key];Object.assign(run,previous);throw error;}
+ }
+ rememberSecrets(){for(const adapter of [...this.config.platforms,...(this.runs||[]).map(r=>r.adapter).filter(Boolean)]){try{const value=secretFor(adapter,this.env);if(value)this.knownSecrets.add(value);}catch{}}}
+ publicSettings(value){const secrets=[...this.knownSecrets,...this.config.platforms.map(p=>p.credential?.env?this.env[p.credential.env]:'').filter(Boolean)];return safe(value,secrets);}
  configuration(){return {config:copy(this.config),configPath:this.configFile,example:copy(exampleConfig)};}
  loadConfig(){const input=JSON.parse(fs.readFileSync(this.configFile,'utf8'));for(const t of input.templates||[])t.intervalMinutes??=5;return validateConfig(input);}
- reload(){if(this.busy)throw Error('Pipeyard is busy.');this.config=this.loadConfig();return this.configuration();}
+ reload(){if(this.busy)throw Error('Pipeyard is busy.');this.config=this.loadConfig();this.rememberSecrets();return this.configuration();}
  get busy(){return !!(this.locks.size||this.registerLocks.size||this.requestLocks.size||this.ticking);}
  publicRun(run){
-  const adapter=run.adapter,rules=resolveResponseConfig(adapter||{}),responses=Object.fromEntries(['status','progress'].map(source=>[source,projectResponse(run.responses?.[source],rules[source].desk)]));
+  const adapter=run.adapter,monitoring=effectiveAdapter(adapter||{}).monitoring,rules=resolveResponseConfig(adapter||{}),responses=this.publicSettings(Object.fromEntries(['status','progress'].map(source=>[source,projectResponse(run.responses?.[source]?.projectionBlocked?null:run.responses?.[source],rules[source].desk)])));
   const allRaw=Object.values(rules).every(rule=>rule.desk.mode==='raw');
   const data={};for(const key of ['id','localOnly','title','description','templateId','templateName','platformId','platformName','externalId','requestId','taskId','status','tracking','color','archived','createdAt','updatedAt','deadline','nextCheckAt','lastCheckedAt','lastError','retryAt','intervalMinutes','waitMinutes','finishedAt','failures','stagePositionDiagnostic','input','connectionHistory'])if(run[key]!==undefined)data[key]=copy(run[key]);
-  const visible=key=>rules[run.provenance?.[key]||'status']?.desk.mode==='raw'&&(run.provenance?.[key]||allRaw);
+  const enabled=key=>run.provenance?.[key]!=='progress'||monitoring.progress;
+  const visible=key=>enabled(key)&&(!run.valueVisibility?.[key]||run.valueVisibility[key].mode==='raw')&&!run.responses?.[run.provenance?.[key]||'status']?.projectionBlocked&&rules[run.provenance?.[key]||'status']?.desk.mode==='raw'&&(run.provenance?.[key]||allRaw);
   for(const key of ['message','stages','platformNotes','result'])data[key]=visible(key)?copy(run[key]??null):key==='message'?'Workflow '+run.status+'.':null;
-  const position=run.stagePosition?{...run.stagePosition,stage:visible('stagePosition')?run.stagePosition.stage:''}:null;
-  const platformProgress=typeof run.progress==='number'&&Number.isFinite(run.progress)?run.progress:null;
+  const position=enabled('stagePosition')&&run.stagePosition?{...run.stagePosition,stage:visible('stagePosition')?run.stagePosition.stage:''}:null;
+  const platformProgress=enabled('progress')&&typeof run.progress==='number'&&Number.isFinite(run.progress)?run.progress:null;
   const estimate=run.progressEstimate||null;
   const progressSource=run.status==='succeeded'?'completed':platformProgress!==null?'platform':estimate?'estimate':'unknown';
   const displayProgress=progressSource==='completed'?100:progressSource==='platform'?platformProgress:estimate?.percent??null;
   const notes=(run.notes||[]).filter(n=>!n.responseId||allRaw).map(n=>copy(n));
-  const events=(run.events||[]).map(e=>allRaw?copy(e):{id:e.id,at:e.at,kind:e.kind,source:'tracker',message:'Pipeline '+e.kind+'.'});
-  return {...data,...visiblePipelineLinks(run),notes,events,costUsd:run.costUsd??null,stagePosition:position,progress:platformProgress,responseAttempts:copy(run.responseAttempts||{}),responses,responseVisibility:Object.fromEntries(Object.entries(rules).map(([k,v])=>[k,v.desk.mode])),shape:['standard','orchestrator','checkpoint','quick'].includes(run.shape)?run.shape:'standard',checkDue:this.checkDue(run),metadata:copy(run.metadata||{}),progressResponse:adapter?.operations?.progress?responses.progress:responses.status,progressEstimate:copy(estimate),displayProgress,progressSource,capabilities:Object.keys(adapter?.operations||{}).filter(k=>!['trigger','status','progress'].includes(k)),source:'pipeyard'};
+  const events=(run.events||[]).map(e=>allRaw&&!e.private?copy(e):{id:e.id,at:e.at,kind:e.kind,source:'tracker',message:'Pipeline '+e.kind+'.'});
+  const selectedText=key=>{const source=run.provenance?.[key]||'status',rule=rules[source],mapping=rule.mappings[key];if(!enabled(key)||run.responses?.[source]?.projectionBlocked)return false;const field=key==='stagePosition'?(typeof mapping==='string'?mapping+'.stage':mapping?.stage):mapping;const allowed=desk=>desk.mode==='raw'||desk.mode==='custom'&&desk.fields.some(f=>f.path===field);return allowed(rule.desk)&&(!run.valueVisibility?.[key]||allowed(run.valueVisibility[key]));};
+  if(position)position.stage=selectedText('stagePosition')?run.stagePosition.stage:'';
+  const stageName=selectedText('stageName')?run.stageName||'':'',diagnostics=endpointDiagnostics(run,this.now()),freshness=progressFreshness(run,this.now(),diagnostics);
+  return {...data,stageName,summary:summarize(run,{stageName,stagePosition:position,displayProgress,progressSource}),progressFreshness:freshness,endpointDiagnostics:diagnostics,configuration:this.publicSettings(configurationView(run,this.config)),...visiblePipelineLinks(run),notes,events,costUsd:run.costUsd??null,stagePosition:position,progress:platformProgress,responseAttempts:copy(run.responseAttempts||{}),responses,responseVisibility:Object.fromEntries(Object.entries(rules).map(([k,v])=>[k,v.desk.mode])),shape:['standard','orchestrator','checkpoint','quick'].includes(run.shape)?run.shape:'standard',checkDue:this.checkDue(run),metadata:copy(run.metadata||{}),progressResponse:adapter?.operations?.progress?responses.progress:responses.status,progressEstimate:copy(estimate),displayProgress,progressSource,capabilities:Object.keys(adapter?.operations||{}).filter(k=>!['trigger','status','progress'].includes(k)),source:'pipeyard'};
  }
- snapshot(){return {version:1,limits:copy(pipeyardLimits),usage:{templates:this.config.templates.length,remainingTemplates:200-this.config.templates.length,platforms:this.config.platforms.length,savedRuns:this.runs.length,visibleRuns:this.runs.filter(r=>!r.archived).length},templates:this.config.templates.map(t=>({...copy(t),canLaunch:!!this.config.platforms.find(p=>p.id===t.platformId)?.operations.trigger})),platforms:this.config.platforms.map(p=>({id:p.id,name:p.name})),runs:this.runs.map(r=>this.publicRun(r)),at:this.now()};}
- template(id){const template=this.config.templates.find(t=>t.id===id);if(!template)throw Error('Unknown pipeline template.');const platform=this.config.platforms.find(p=>p.id===template.platformId);return {template,adapter:{...platform,responses:resolveResponseConfig(platform,template)}};}
+ snapshot(){return {version:1,limits:copy(pipeyardLimits),usage:{templates:this.config.templates.length,remainingTemplates:200-this.config.templates.length,platforms:this.config.platforms.length,savedRuns:this.runs.length,visibleRuns:this.runs.filter(r=>!r.archived).length},templates:this.config.templates.map(t=>({...this.publicSettings(t),canLaunch:!!this.config.platforms.find(p=>p.id===t.platformId)?.operations.trigger})),platforms:this.config.platforms.map(p=>({id:p.id,name:p.name})),runs:this.runs.map(r=>this.publicRun(r)),at:this.now()};}
+ template(id){const template=this.config.templates.find(t=>t.id===id);if(!template)throw Error('Unknown pipeline template.');const platform=this.config.platforms.find(p=>p.id===template.platformId);return {template,adapter:effectiveAdapter(platform,template)};}
  async call(run,operation,extra={}){
   if(!run.adapter)throw Error('Connect this local placeholder to a platform first.');
-  const read=['status','progress'].includes(operation);if(read){run.responseAttempts??={};run.responseAttempts[operation]={at:this.now(),error:''};}
+  const secret=secretFor(run.adapter,this.env);if(secret)this.knownSecrets.add(secret);
+  const read=['status','progress'].includes(operation);if(read){run.responseAttempts??={};run.responseAttempts[operation]={at:this.now(),error:''};run.endpointSkipped??={};delete run.endpointSkipped[operation];}
   try{const result=await callPlatform(run.adapter,operation,{externalId:run.externalId,input:run.input,...extra},{now:this.now,fetchImpl:this.fetchImpl,env:this.env});
-   if(read){if(result.externalId&&run.externalId&&result.externalId!==run.externalId)throw Error('Platform returned a different run ID.');this.saveProgressResponse(run,result.response,operation);}
+   if(read){if(result.externalId&&run.externalId&&result.externalId!==run.externalId)throw Error('Platform returned a different run ID.');this.saveProgressResponse(run,result.response,operation);run.extractionDiagnostics??={};run.extractionDiagnostics[operation]=result.diagnostics;}
    return result;
   }catch(error){if(read)run.responseAttempts[operation]={at:this.now(),error:error.message};throw error;}
  }
- entry(run,kind,message,source='tracker'){run.events.push({id:randomUUID(),at:this.now(),kind,source,message:text(message)});run.events=run.events.slice(-500);run.updatedAt=this.now();}
+ entry(run,kind,message,source='tracker'){run.events.push({id:randomUUID(),at:this.now(),kind,source,message:text(message),...(source==='platform'&&Object.values(resolveResponseConfig(run.adapter||{})).some(r=>r.desk.mode!=='raw')?{private:true}:{})});run.events=run.events.slice(-500);run.updatedAt=this.now();}
  observation(run,result){
-  const before=fingerprint([run.status,run.message,run.stages]);
-  for(const k of ['status','message','progress','stages','platformNotes','result','costUsd','stagePosition','stagePositionDiagnostic','provenance'])run[k]=result[k];
+  const before=fingerprint([run.status,run.message,run.stages,run.stagePosition,run.stageName]);
+  run.observedAt??={};run.missingValues??={};run.provenance??={};run.valueVisibility??={};
+  for(const k of ['status','message','progress','stages','platformNotes','result','costUsd','stagePosition','stageName','stagePositionDiagnostic']){
+   const preserve=['progress','stagePosition','stageName','stages','platformNotes','result'].includes(k),value=result[k],present=value!==null&&value!==undefined&&(!Array.isArray(value)||value.length>0);
+   if(preserve&&!present){run.missingValues[k]=true;continue;}
+   run[k]=value;if(preserve){run.observedAt[k]=this.now();run.missingValues[k]=false;}run.provenance[k]=result.provenance?.[k]||'status';run.valueVisibility[k]=copy(resolveResponseConfig(run.adapter||{})[run.provenance[k]].desk);
+  }
   run.lastCheckedAt=this.now();run.lastError='';run.retryAt=result.retryAt??null;run.failures=0;
   if(terminal(run.status)){run.tracking='finished';run.finishedAt??=this.now();run.nextCheckAt=null;}
   else if(run.tracking==='active')run.nextCheckAt=Math.max(this.now()+run.intervalMinutes*60000,run.retryAt||0);
-  if(before!==fingerprint([run.status,run.message,run.stages]))this.entry(run,run.status==='succeeded'?'complete':['awaiting-approval','failed','cancelled'].includes(run.status)?'attention':run.status==='paused'?'tracking':'progress',run.message||'Workflow '+run.status+'.','platform');
+  if(before!==fingerprint([run.status,run.message,run.stages,run.stagePosition,run.stageName]))this.entry(run,run.status==='succeeded'?'complete':['awaiting-approval','failed','cancelled'].includes(run.status)?'attention':run.status==='paused'?'tracking':'progress',result.message||result.stageName||result.stagePosition?.stage||'Workflow '+run.status+'.','platform');
  }
  checkDue(run){return !!(run.externalId&&!run.archived&&!terminal(run.status)&&run.tracking==='active'&&this.now()<run.deadline&&this.now()>=Math.max(run.nextCheckAt||0,run.retryAt||0));}
  saveProgressResponse(run,data,source){
   run.responses??={};const previous=run.responses[source];
-  if(previous&&fingerprint(previous.data)===fingerprint(data)){previous.fetchedAt=this.now();return;}
+  if(previous&&fingerprint(previous.data)===fingerprint(data)){previous.fetchedAt=this.now();delete previous.projectionBlocked;delete previous.settingsChanged;return;}
   run.responses[source]={id:randomUUID(),source,fetchedAt:this.now(),data:copy(data),review:null};
  }
 
+ async finalDetails(run,result){
+  const monitoring=effectiveAdapter(run.adapter).monitoring;
+  if(!terminal(result.status)||!run.adapter.operations.progress||!monitoring.progress||!monitoring.finalProgress||result.retryAt>this.now())return;
+  try{const details=await this.call(run,'progress');result.retryAt=Math.max(result.retryAt||0,details.retryAt||0)||null;for(const key of ['message','progress','stagePosition','stageName','stages','platformNotes','result'])if(details[key]!==null&&details[key]!==undefined&&details[key]!==''&&(!Array.isArray(details[key])||details[key].length)){result[key]=details[key];result.provenance[key]='progress';}}catch{}
+ }
  async check(run,{automatic=false}={}){
   if(run.retryAt&&run.retryAt>this.now())return;
   const previousError=run.lastError,previousFailures=run.failures||0;
@@ -89,14 +148,16 @@ export class Pipeyard {
    if(result.externalId&&result.externalId!==run.externalId)throw Error('Platform returned a different run ID.');
    let detailsError=null;
    this.saveProgressResponse(run,result.response,'status');
-   if(run.adapter.operations.progress&&!(result.retryAt>this.now())&&(!automatic||(!run.archived&&run.tracking==='active'&&this.now()<run.deadline&&!terminal(result.status)))){
+   const monitoring=effectiveAdapter(run.adapter).monitoring;
+   run.endpointSkipped??={};
+   if(run.adapter.operations.progress&&monitoring.progress&&!(result.retryAt>this.now())&&(!terminal(result.status)||monitoring.finalProgress)&&(!automatic||(!run.archived&&run.tracking==='active'&&this.now()<run.deadline))){
     try{const progress=await this.call(run,'progress');if(progress.externalId&&progress.externalId!==run.externalId)throw Error('Progress returned a different run ID.');
      this.saveProgressResponse(run,progress.response,'progress');result.retryAt=Math.max(result.retryAt||0,progress.retryAt||0)||null;
-     for(const k of ['progress','result','stagePosition'])if(progress[k]!==null){result[k]=progress[k];result.provenance[k]='progress';}
+     for(const k of ['progress','result','stagePosition','stageName'])if(progress[k]!==null){result[k]=progress[k];result.provenance[k]='progress';}
      for(const k of ['stages','platformNotes'])if(Array.isArray(progress[k])&&progress[k].length||progress[k]&&typeof progress[k]==='object'&&!Array.isArray(progress[k])){result[k]=progress[k];result.provenance[k]='progress';}
      if(progress.message){result.message=progress.message;result.provenance.message='progress';}
     }catch(error){detailsError=error;}
-   }
+   }else if(run.adapter.operations.progress)run.endpointSkipped.progress=!monitoring.progress?'Progress monitoring is disabled.':result.retryAt>this.now()?'Waiting for the platform retry boundary.':terminal(result.status)&&!monitoring.finalProgress?'Final progress fetch is disabled.':'Monitoring budget or tracking state prevents a progress request.';
    this.observation(run,result);
    if(detailsError){run.lastError='Progress details unavailable. '+detailsError.message;run.failures=previousFailures+1;run.retryAt=detailsError.retryAt||this.now()+Math.min(1800000,60000*2**Math.min(run.failures-1,5));if(run.tracking==='active'&&run.retryAt)run.nextCheckAt=Math.max(run.nextCheckAt||0,run.retryAt);}
 
@@ -141,7 +202,7 @@ export class Pipeyard {
     if(this.runs.some(r=>r!==run&&r.platformId===run.platformId&&r.externalId===body.externalId))throw Error('That external run is already tracked.');
     const previous=run.externalId;
     run.connectionHistory=[...(run.connectionHistory||[]),{externalId:previous,status:run.status,changedAt:this.now()}].slice(-20);
-    Object.assign(run,patch,{externalId:body.externalId,responses:{},responseAttempts:{},provenance:{},stagePosition:null,progressEstimate:null,progress:null,result:null,stages:[],platformNotes:[],costUsd:null,lastCheckedAt:null,lastError:'',retryAt:null,failures:0,nextCheckAt:null});delete run.finishedAt;
+    Object.assign(run,patch,{externalId:body.externalId,responses:{},responseAttempts:{},provenance:{},observedAt:{},missingValues:{},valueVisibility:{},endpointSkipped:{},extractionDiagnostics:{},stageName:null,stagePosition:null,progressEstimate:null,progress:null,result:null,stages:[],platformNotes:[],costUsd:null,lastCheckedAt:null,lastError:'',retryAt:null,failures:0,nextCheckAt:null});delete run.finishedAt;
     run.tracking=run.tracking==='active'&&this.now()<run.deadline?'active':run.tracking==='expired'||this.now()>=run.deadline?'expired':'paused';
     this.observation(run,result);this.saveProgressResponse(run,result.response,'status');
     this.entry(run,'linked','External pipeline ID changed from '+(previous||'(unlinked)')+' to '+run.externalId+'. Verified by status check; no submission made.');
@@ -156,10 +217,12 @@ export class Pipeyard {
   if(action==='save-template')return this.saveTemplate(body.template);
   if(action==='launch'||action==='register')return this.create(action,body);
   const run=this.runs.find(r=>r.id===body.id);if(!run){if(action==='delete'&&this.deletedRuns.some(r=>r.idHash===fingerprint(body.id)))return {id:body.id,deleted:true};throw Error('Unknown Pipeyard run.');}
+  if(action==='preview-settings')return this.previewSettings(run);
   if(action==='check-due'&&(this.locks.has(run.id)||!this.checkDue(run)))return this.publicRun(run);
   if(this.locks.has(run.id))throw Object.assign(Error('Run is busy; retry after the current check.'),{status:409,code:'PIPEYARD_BUSY'});
   this.locks.add(run.id);
   try{
+   if(action==='apply-settings')return this.applySettings(run,body);
    if(action==='set-check-interval'){
     if(run.intervalMinutes===body.intervalMinutes)return this.publicRun(run);
     const previous={intervalMinutes:run.intervalMinutes,nextCheckAt:run.nextCheckAt,updatedAt:run.updatedAt};
@@ -185,7 +248,7 @@ export class Pipeyard {
     if(!record||record.id!==body.responseId)throw Error('Progress response changed or was superseded. Read the latest response before reviewing it.');
     let secret='';try{secret=secretFor(run.adapter,this.env);}catch{}
     const author=safe(body.author,[secret]),summary=safe(body.summary,[secret]);
-    record.review={at:this.now(),author,summary};
+    record.review={at:this.now(),author,summary,...(rule.desk.mode!=='raw'?{private:true}:{})};
     if(rule.desk.mode==='raw')run.notes.push({id:randomUUID(),at:this.now(),source,responseId:body.responseId,text:author+': '+summary});
     this.entry(run,'note','Progress response reviewed by '+author+'.');
    }
@@ -264,7 +327,7 @@ export class Pipeyard {
    if(action==='register'){
     const result=await this.call(run,'status');if(result.externalId&&result.externalId!==run.externalId)throw Error('Platform returned a different run ID.');
     const existing=this.runs.find(r=>r.platformId===run.platformId&&r.externalId===run.externalId);if(existing)return this.publicRun(existing);
-    this.observation(run,result);this.saveProgressResponse(run,result.response,'status');this.runs.push(run);this.entry(run,'registered','Tracking an existing external run.');
+    await this.finalDetails(run,result);this.observation(run,result);this.saveProgressResponse(run,result.response,'status');this.runs.push(run);this.entry(run,'registered','Tracking an existing external run.');
    }else{
     this.runs.push(run);this.entry(run,'submitted','Submission recorded before contacting the platform.');this.persist();
     try{const result=await this.call(run,'trigger',{input,idempotencyKey:run.requestId});if(!result.externalId||result.externalId.includes('[redacted]'))throw Error('Platform did not return a usable run ID.');if(this.runs.some(r=>r!==run&&r.platformId===run.platformId&&r.externalId===result.externalId))throw Error('Platform returned an already tracked run.');run.externalId=result.externalId;this.observation(run,result);}

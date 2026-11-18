@@ -5,13 +5,25 @@ import {useEffect,useRef,useState,type CSSProperties,type ReactNode} from 'react
 
 type Manager={id:string;nickname:string;state:string;label:string;taskCount:number};
 type Response={mode:'raw'|'custom';source:string;fetchedAt:number;data?:unknown;fields?:{label:string;value:string;diagnostic?:string}[]};
-type Run={ticketUrl?:string|null;pipelineUrl?:string|null;intervalMinutes?:number;deadline?:number;retryAt?:number;costUsd?:number|null;stagePosition?:{stage:string;currentIndex:number|null;total:number};responses?:{status:Response|null;progress:Response|null};responseVisibility?:{status:string;progress:string};responseAttempts?:{status?:{at:number;error?:string};progress?:{at:number;error?:string}};managerAssignment?:{nickname:string;status:string;summary:string;available:boolean};updatedAt?:number;shape?:string;localOnly?:boolean;id:string;title:string;templateName:string;platformName?:string;externalId?:string;status:string;tracking:string;source?:string;taskId?:string;color?:string;archived?:boolean;message?:string;lastError?:string;checkDue?:boolean;lastCheckedAt?:number;nextCheckAt?:number;displayProgress?:number|null;progress?:number|null;progressSource?:string;progressEstimate?:unknown;progressResponse?:{source:string;fetchedAt:number;data:unknown};metadata?:unknown;input?:unknown;result?:unknown;stages?:unknown;platformNotes?:unknown;notes?:{id:string;at:number;text:string}[];events?:{id:string;at:number;text?:string;message?:string}[]};
+type Diagnostic={enabled:boolean;state:string;reason?:string|null;lastSuccessAt?:number|null;lastAttemptAt?:number|null;error?:string|null};
+type Configuration={revision:string;latestRevision:string|null;updateAvailable:boolean;templateId:string;platformId:string;monitoring:{progress?:boolean;finalProgress?:boolean};summary:{mode?:'completion'|'stage'|'both'|'status'};responses:unknown;intervalMinutes:number;waitMinutes:number};
+type SettingsPreview={id:string;currentRevision:string;targetRevision:string|null;changes:{field:string;label:string;before:unknown;after:unknown}[];canApply:boolean;reason?:string|null};
+type Run={summary?:{mode:'completion'|'stage'|'both'|'status';primary:string;secondary?:string|null};progressFreshness?:{stale:boolean;at?:number|null;reason?:string|null;stageStale?:boolean;stageAt?:number|null;stageReason?:string|null};endpointDiagnostics?:{status?:Diagnostic;progress?:Diagnostic};configuration?:Configuration;ticketUrl?:string|null;pipelineUrl?:string|null;intervalMinutes?:number;deadline?:number;retryAt?:number;costUsd?:number|null;stagePosition?:{stage:string;currentIndex:number|null;total:number};responses?:{status:Response|null;progress:Response|null};responseVisibility?:{status:string;progress:string};responseAttempts?:{status?:{at:number;error?:string};progress?:{at:number;error?:string}};managerAssignment?:{nickname:string;status:string;summary:string;available:boolean};updatedAt?:number;shape?:string;localOnly?:boolean;id:string;title:string;templateName:string;platformName?:string;externalId?:string;status:string;tracking:string;source?:string;taskId?:string;color?:string;archived?:boolean;message?:string;lastError?:string;checkDue?:boolean;lastCheckedAt?:number;nextCheckAt?:number;displayProgress?:number|null;progress?:number|null;progressSource?:string;progressEstimate?:unknown;progressResponse?:{source:string;fetchedAt:number;data:unknown};metadata?:unknown;input?:unknown;result?:unknown;stages?:unknown;platformNotes?:unknown;notes?:{id:string;at:number;text:string}[];events?:{id:string;at:number;text?:string;message?:string}[]};
 const labels:Record<string,string>={running:'Running',queued:'Queued',paused:'Workflow paused','awaiting-approval':'Needs approval',succeeded:'Completed',failed:'Failed',cancelled:'Cancelled',unknown:'Status unknown',unresolved:'Needs reconciliation',submitting:'Submitting',ready:'Ready'};
 const runLabel=(r:Run)=>r.localOnly?'Local placeholder':labels[r.status]||r.status;
 const completed=(r:Run)=>['succeeded','failed','cancelled'].includes(r.status);
 const attention=(r:Run)=>['awaiting-approval','unresolved','failed'].includes(r.status)||!!r.lastError;
-const date=(at?:number)=>at?new Date(at).toLocaleString():'Not yet';
+const date=(at?:number|null)=>at?new Date(at).toLocaleString():'Not yet';
 function progress(r:Run){const value=r.displayProgress===undefined?r.progress:r.displayProgress;return typeof value==='number'&&Number.isFinite(value)?Math.round(value)+'%':'Progress unknown';}
+export function PipeyardSummary({run}:{run:Run}){
+ const text=run.summary?run.summary.primary:progress(run),secondary=run.summary?.secondary,stale=!!run.progressFreshness?.stale,mode=run.summary?.mode||'completion';
+ return <span className="pipe-summary"><span>{stale&&['completion','both'].includes(mode)?'Last known: ':''}{text}</span>{secondary&&<span title={run.progressFreshness?.stageStale?run.progressFreshness.stageReason||undefined:undefined}>{run.progressFreshness?.stageStale?'Last known stage: ':''}{secondary}</span>}{stale&&<small className="pipe-stale">Progress stale{run.progressFreshness?.at?' · Last success '+date(run.progressFreshness.at):''}{run.progressFreshness?.reason?' · '+run.progressFreshness.reason:''}</small>}</span>;
+}
+export function EndpointDiagnostics({source,diagnostic,compact=false}:{source:string;diagnostic?:Diagnostic;compact?:boolean}){
+ if(!diagnostic)return null;
+ return <span className="pipe-endpoint-diagnostic"><span>{source==='status'?'Status':'Progress'}: {diagnostic.enabled?diagnostic.state:'disabled'}{diagnostic.reason?' · '+diagnostic.reason:''}</span>{!compact&&<><small>Last success: {date(diagnostic.lastSuccessAt)} · Last attempt: {date(diagnostic.lastAttemptAt)}</small>{diagnostic.error&&<span className="field-error">{diagnostic.error}</span>}</>}</span>;
+}
+const settingValue=(value:unknown)=>value===undefined?'Not set':typeof value==='string'?value:JSON.stringify(value);
 function ObjectView({value}:{value:unknown}){
  let budget=400;
  function branch(value:unknown,name:string,depth:number):ReactNode{
@@ -27,6 +39,7 @@ export default function PipeyardPanel({connected,popout,openRanch,drafts}:{draft
  const [appearance,setAppearance]=useState({shape:'standard',color:'#61b7ba'});
  const [deleteTarget,setDeleteTarget]=useState<{id:string;updatedAt:number;title:string}|null>(null);
  const [available,setAvailable]=useState(false),[pending,setPending]=useState(false),[notice,setNotice]=useState(''),[note,setNote]=useState(''),[minutes,setMinutes]=useState(60);
+ const [settingsPreview,setSettingsPreview]=useState<SettingsPreview|null>(null),[settingsPending,setSettingsPending]=useState(false),[settingsError,setSettingsError]=useState('');
  const [frequency,setFrequency]=useState<number|null>(null),[frequencyError,setFrequencyError]=useState(''),[frequencyPending,setFrequencyPending]=useState(false);
  const alive=useRef(true),fetching=useRef(false),working=useRef(false),checked=useRef('');
  async function refresh(){
@@ -55,10 +68,27 @@ export default function PipeyardPanel({connected,popout,openRanch,drafts}:{draft
   }}catch(error){if(alive.current)setFrequencyError((error instanceof Error?error.message:'Could not save frequency.')+' Your change is still unsaved. Retry saving.');}
   finally{working.current=false;if(alive.current)setFrequencyPending(false);}
  }
- const run=runs.find(r=>r.id===selected),disabled=!connected||!available||pending||frequencyPending;
+ async function previewSettings(){
+  if(working.current||!connected||!available)return;
+  const id=selected;working.current=true;setSettingsPending(true);setSettingsError('');setSettingsPreview(null);
+  try{const reply=await window.botRanch.pipeyard('action',{action:'preview-settings',id});if(reply.error)throw Error(reply.code==='PIPEYARD_BUSY'?'Pipeyard is busy. Retry the preview when the current operation finishes.':reply.error);if(alive.current)setSettingsPreview(reply.result);}
+  catch(error){if(alive.current)setSettingsError(error instanceof Error?error.message:'Could not preview settings.');}
+  finally{working.current=false;if(alive.current)setSettingsPending(false);}
+ }
+ async function applySettings(){
+  const preview=settingsPreview;if(!preview?.canApply||preview.id!==selected||working.current||!connected||!available)return;
+  working.current=true;setSettingsPending(true);setSettingsError('');
+  try{const reply=await window.botRanch.pipeyard('action',{action:'apply-settings',id:preview.id,expectedRevision:preview.currentRevision,targetRevision:preview.targetRevision,confirmed:true});
+   if(reply.error){if(reply.code==='PIPEYARD_SETTINGS_CHANGED'){setSettingsPreview(null);await refresh();throw Error('Settings changed since this preview. Preview the latest changes before applying.');}throw Error(reply.code==='PIPEYARD_BUSY'?'Pipeyard is busy. No settings were changed. Retry applying when the current operation finishes.':reply.error);}
+   if(alive.current){setSettingsPreview(null);setFrequency(null);await refresh();setNotice('Settings applied to this run.');}
+  }catch(error){if(alive.current)setSettingsError(error instanceof Error?error.message:'Could not apply settings. Preview again before retrying.');}
+  finally{working.current=false;if(alive.current)setSettingsPending(false);}
+ }
+ const run=runs.find(r=>r.id===selected),disabled=!connected||!available||pending||frequencyPending||settingsPending;
+ const previewStale=!!settingsPreview&&(settingsPreview.id!==run?.id||settingsPreview.currentRevision!==run?.configuration?.revision||settingsPreview.targetRevision!==run?.configuration?.latestRevision);
  useEffect(()=>{if(!selected){checked.current='';return;}if(!run||disabled||checked.current===selected)return;checked.current=selected;if(run.checkDue&&!run.archived&&run.externalId&&run.source!=='board'&&!completed(run))void act('check-due',{},'Due progress checked.');},[selected,run?.id,disabled]);
  useEffect(()=>{setAppearance({shape:run?.shape||'standard',color:run?.color||'#61b7ba'});},[run?.id,run?.shape,run?.color]);
- const choose=(r:Run)=>{checked.current='';setDeleteTarget(null);setSelected(r.id);setFrequency(null);setFrequencyError('');setNote(drafts.get(r.id)||'');setNotice('');};
+ const choose=(r:Run)=>{checked.current='';setDeleteTarget(null);setSettingsPreview(null);setSettingsError('');setSelected(r.id);setFrequency(null);setFrequencyError('');setNote(drafts.get(r.id)||'');setNotice('');};
  const visible=runs.filter(r=>(filter==='history'?!!r.archived:!r.archived)&&(filter!=='attention'||attention(r))&&[r.title,r.externalId,r.templateName].join(' ').toLowerCase().includes(query.toLowerCase()));
  return <section className="pipe-panel" aria-label="Pipeline operations">
   <div className="section-toolbar"><button className="text-button" disabled={pending} onClick={()=>void refresh()}>Refresh list</button><button className="text-button" onClick={()=>popout()}>Full Pipeyard</button><button className="text-button" onClick={openRanch}>Visual Ranch</button></div>
@@ -67,8 +97,9 @@ export default function PipeyardPanel({connected,popout,openRanch,drafts}:{draft
   {run?.managerAssignment&&<p className="field-hint">{run.managerAssignment.nickname} · {run.managerAssignment.status}{run.managerAssignment.summary&&' · '+run.managerAssignment.summary}</p>}
   {notice&&<p className="inline-notice" role="status">{notice}</p>}
   {run?<div className="sidebar-detail pipe-detail">
-   <button className="text-button" disabled={pending} onClick={()=>{setSelected('');setNotice('');}}>Back to pipelines</button><h2>{run.title}</h2>
-   <p className="pipe-state">{runLabel(run)} · {progress(run)}</p>{run.stagePosition&&<p>Stage {run.stagePosition.currentIndex??'?'} of {run.stagePosition.total}{run.stagePosition.stage&&' — '+run.stagePosition.stage}</p>}
+   <button className="text-button" disabled={pending||settingsPending} onClick={()=>{setSettingsPreview(null);setSettingsError('');setSelected('');setNotice('');}}>Back to pipelines</button><h2>{run.title}</h2>
+   <p className="pipe-state">{runLabel(run)}</p><PipeyardSummary run={run}/>{!run.summary&&run.stagePosition&&<p>Stage {run.stagePosition.currentIndex??'?'} of {run.stagePosition.total}{run.stagePosition.stage&&' — '+run.stagePosition.stage}</p>}
+   {(['status','progress'] as const).map(source=><EndpointDiagnostics key={source} source={source} diagnostic={run.endpointDiagnostics?.[source]}/>)}
    {!run.localOnly&&run.tracking==='paused'&&<p className="inline-notice">Local monitoring paused. External work may continue.</p>}{run.tracking==='expired'&&<p className="inline-notice">Monitoring asleep. External work may continue.</p>}
    {run.message&&<p>{run.message}</p>}{run.lastError&&<p className="inline-notice">Last check: {run.lastError}</p>}
    <dl className="pipe-facts"><dt>Pipeline ID</dt><dd>{run.externalId||'Not connected'}</dd><dt>Local ID</dt><dd>{run.id}</dd><dt>Template</dt><dd>{run.templateName}</dd><dt>Platform</dt><dd>{run.platformName||'Unknown'}</dd><dt>Last check</dt><dd>{date(run.lastCheckedAt)}</dd><dt>Next eligible check</dt><dd>{run.nextCheckAt?date(Math.max(run.nextCheckAt,run.retryAt||0)):'Not scheduled'}</dd><dt>Monitoring deadline</dt><dd>{date(run.deadline)}</dd><dt>Retry boundary</dt><dd>{run.retryAt?date(run.retryAt):'No retry delay'}</dd><dt>Approval cost</dt><dd>{run.costUsd==null?'Not reported':'$'+run.costUsd.toFixed(2)}</dd></dl>
@@ -79,6 +110,21 @@ export default function PipeyardPanel({connected,popout,openRanch,drafts}:{draft
     <button onClick={()=>void act('set-appearance',appearance,'Pipeline appearance saved.')}>Save appearance</button>
    </fieldset>
    {run.source!=='board'&&<fieldset className="sidebar-fields" disabled={disabled}><label>Check frequency<select aria-label="Check frequency" aria-describedby={frequencyError?'pipe-frequency-error':undefined} value={frequency??run.intervalMinutes??defaultIntervalMinutes} onChange={e=>{setFrequency(Number(e.target.value));setFrequencyError('');}}>{intervals.map((value:number)=><option value={value} key={value}>{intervalLabel(value)}</option>)}</select></label><p className="field-hint">Saved frequency: {intervalLabel(run.intervalMinutes??defaultIntervalMinutes)}</p><button disabled={frequency===null} onClick={()=>void saveFrequency()}>{frequencyPending?'Saving frequency…':'Save frequency'}</button>{frequencyError&&<p id="pipe-frequency-error" role="alert" className="field-error">{frequencyError}</p>}</fieldset>}
+   {run.source!=='board'&&<section className="pipe-settings" aria-label="Run configuration"><h3>Run configuration</h3>
+    {run.configuration?<><p className="field-hint">{!run.configuration.latestRevision?'The original template or platform is unavailable.':run.configuration.updateAvailable?'Updated template settings are available.':'This run uses the latest template settings.'}</p>
+     <dl className="pipe-facts"><dt>Summary</dt><dd>{run.configuration.summary.mode||'completion'}</dd><dt>Progress checks</dt><dd>{run.configuration.monitoring.progress?'Enabled':'Disabled'}</dd><dt>Final progress</dt><dd>{run.configuration.monitoring.finalProgress?'Enabled':'Disabled'}</dd><dt>Check frequency</dt><dd>{intervalLabel(run.configuration.intervalMinutes)}</dd><dt>Wait budget</dt><dd>{run.configuration.waitMinutes} minutes</dd><dt>Revision</dt><dd>{run.configuration.revision}</dd></dl>
+     <details><summary>Effective response mappings</summary><ObjectView value={run.configuration.responses}/></details>
+     <button disabled={disabled} onClick={()=>void previewSettings()}>{settingsPending?'Working…':'Preview settings update'}</button>
+    </>:<p className="field-hint">Effective settings are unavailable for this run.</p>}
+    {settingsPreview?.id===run.id&&<div className="pipe-settings-review" role="group" aria-label="Review settings update"><p>Review changes for {run.title}.</p>
+     {settingsPreview.changes.length?<dl className="pipe-setting-changes">{settingsPreview.changes.map(change=><div key={change.field}><dt>{change.label}</dt><dd><span>Before: {settingValue(change.before)}</span><span>After: {settingValue(change.after)}</span></dd></div>)}</dl>:<p>No settings changes.</p>}
+     {settingsPreview.reason&&<p className="field-hint">{settingsPreview.reason}</p>}{previewStale&&<p className="field-error">Settings changed since this preview. Preview again before applying.</p>}
+     <p className="field-hint">Applies read operations, mappings, display settings and check cadence to this run. External identity, credentials and the monitoring deadline stay as saved.</p>
+     <div className="button-row"><button disabled={disabled||!settingsPreview.canApply||previewStale} onClick={()=>void applySettings()}>Apply reviewed settings</button><button disabled={settingsPending} onClick={()=>{setSettingsPreview(null);setSettingsError('');}}>Cancel settings update</button></div>
+    </div>}
+    {settingsError&&<p className="field-error" role="alert">{settingsError}</p>}
+    <p className="field-hint">Edit platform connections, template mappings and response visibility in Full Pipeyard: choose Configure, save your changes, then preview them here.</p><button className="text-button" onClick={()=>popout()}>Open Full Pipeyard</button>
+   </section>}
    {run.source==='board'?<p>Managed by its Board task. <button className="text-button" onClick={()=>popout(run.taskId)}>Open Board task</button></p>:<>
     <fieldset className="sidebar-fields" disabled={disabled}><div className="button-row">
      <button disabled={!run.externalId||!!run.archived} onClick={()=>void act('refresh',{},'Progress checked.')}>Check now</button>
@@ -99,7 +145,7 @@ export default function PipeyardPanel({connected,popout,openRanch,drafts}:{draft
    <div className="board-lanes" aria-label="Pipeline filters">{[['active','Active'],['attention','Needs you'],['history','History']].map(([value,label])=><button key={value} aria-pressed={filter===value} onClick={()=>setFilter(value)}>{label}</button>)}</div>
    <label className="pipe-search">Find a pipeline<input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Title, template or pipeline ID"/></label>
    <p className="field-hint">{visible.length} pipelines · {available?'Live local tracking':'Last known view'}</p>
-   {visible.map(r=><button key={r.id} className="pipe-list-row" style={{'--pipe-color':/^#[a-f0-9]{6}$/i.test(r.color||'')?r.color:'#aab7bb'} as CSSProperties} onClick={()=>choose(r)}><strong>{r.title}</strong><span>{runLabel(r)}{attention(r)?' · Needs you':''}</span><span>{progress(r)} · {r.templateName}</span><small>{r.externalId||'No external ID'}{r.localOnly?' · Not connected':r.tracking==='paused'?' · Monitoring paused':r.tracking==='expired'?' · Monitoring asleep':''}</small></button>)}
+   {visible.map(r=><button key={r.id} className="pipe-list-row" style={{'--pipe-color':/^#[a-f0-9]{6}$/i.test(r.color||'')?r.color:'#aab7bb'} as CSSProperties} onClick={()=>choose(r)}><strong>{r.title}</strong><span>{runLabel(r)}{attention(r)?' · Needs you':''}</span><PipeyardSummary run={r}/><span>{r.templateName}</span>{(['status','progress'] as const).map(source=><EndpointDiagnostics key={source} source={source} diagnostic={r.endpointDiagnostics?.[source]} compact/>)}<small>{r.externalId||'No external ID'}{r.localOnly?' · Not connected':r.tracking==='paused'?' · Monitoring paused':r.tracking==='expired'?' · Monitoring asleep':''}</small></button>)}
    {!visible.length&&<p className="field-hint">{available?'No matching pipelines. Use Full Pipeyard to launch or track an existing run.':'Connect the companion to load pipelines.'}</p>}
   </>}
  </section>;

@@ -1,7 +1,7 @@
 // Extraction rules and public presentation are deliberately separate.
 const object=v=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 const clone=v=>JSON.parse(JSON.stringify(v));
-export const legacyFields={id:'id',status:'status',message:'message',progress:'progress',stages:'stages',notes:'notes',result:'result',cost:'cost_usd',stagePosition:'progress'};
+export const legacyFields={id:'id',status:'status',message:'message',progress:'progress',stages:'stages',notes:'notes',result:'result',cost:'cost_usd',stagePosition:'progress',stageName:null};
 export function validPath(v){return typeof v==='string'&&v.length>0&&v.length<=200&&v.split('.').every(k=>k&&!['__proto__','constructor','prototype'].includes(k));}
 export function readField(value,path){return validPath(path)?path.split('.').reduce((v,k)=>v!==null&&typeof v==='object'&&Object.hasOwn(v,k)?v[k]:undefined,value):undefined;}
 function keys(value,allowed){if(!object(value)||Object.keys(value).some(k=>!allowed.includes(k)))throw Error('Unknown response setting.');}
@@ -23,13 +23,14 @@ export function validateDesk(desk){
  return clone(desk);
 }
 export function validateResponses(value={}){
- keys(value,['status','progress']);for(const endpoint of Object.values(value)){keys(endpoint,['mappings','desk']);if(endpoint.mappings!==undefined)validateMappings(endpoint.mappings);if(endpoint.desk!==undefined)validateDesk(endpoint.desk);}
+ keys(value,['status','progress']);for(const endpoint of Object.values(value)){keys(endpoint,['mappings','desk','progressScale']);if(endpoint.progressScale!==undefined&&!['percent','fraction'].includes(endpoint.progressScale))throw Error('Progress scale must be percent or fraction.');if(endpoint.mappings!==undefined)validateMappings(endpoint.mappings);if(endpoint.desk!==undefined)validateDesk(endpoint.desk);}
  return clone(value);
 }
 export function resolveResponseConfig(platform={},template={}){
  validateResponses(platform.responses);validateResponses(template.responses);
  return Object.fromEntries(['status','progress'].map(source=>[source,{
   mappings:{...legacyFields,...platform.fields,...platform.responses?.[source]?.mappings,...template.responses?.[source]?.mappings},
+  progressScale:template.responses?.[source]?.progressScale??platform.responses?.[source]?.progressScale??'percent',
   desk:clone(template.responses?.[source]?.desk??platform.responses?.[source]?.desk??{mode:'raw'})
  }]));
 }
@@ -43,7 +44,7 @@ export function extractStagePosition(data,mapping){return normalizeStagePosition
 export function projectResponse(record,desk={mode:'raw'}){
  if(!record||desk.mode==='hidden')return null;
  const base={id:record.id,source:record.source,fetchedAt:record.fetchedAt,mode:desk.mode};
- if(desk.mode==='raw')return {...base,data:clone(record.data),review:record.review?clone(record.review):null};
+ if(desk.mode==='raw')return {...base,data:clone(record.data),review:record.review&&!record.review.private?clone(record.review):null};
  const fields=desk.fields.map(f=>{
   const value=readField(record.data,f.path),format=f.format??'text',out={label:f.label,value:''};
   if(value===undefined||value===null)return {...out,value:f.fallback??'—'};

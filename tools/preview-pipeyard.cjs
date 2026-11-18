@@ -10,6 +10,7 @@ const files={
  '/prototype/creatures.mjs':'designs/pipeyard/creatures.mjs',
  '/prototype/creature-behavior.mjs':'designs/pipeyard/creature-behavior.mjs',
  '/setup/pipeyard.js':'sources/omp-bot-companion/setup/pipeyard.js',
+ '/setup/pipeyard-editor.mjs':'sources/omp-bot-companion/setup/pipeyard-editor.mjs',
  '/setup/pipeyard.css':'sources/omp-bot-companion/setup/pipeyard.css',
  '/setup/pipeyard-demo.mjs':'sources/omp-bot-companion/setup/pipeyard-demo.mjs',
  '/setup/pipeyard-feed.mjs':'sources/omp-bot-companion/setup/pipeyard-feed.mjs',

@@ -5,7 +5,7 @@ Pipeyard tracks workflows executed by external services. Its Ranch page shows pi
 ## Start here
 
 1. Open **Pipeyard** from the sidebar for compact controls, or open the Ranch and switch to Pipeyard for the visual yard. **Demo mode** lets you try sample runs without contacting a service.
-2. For real workflows, open **Configure platforms** and adapt the example to your service. A **platform** describes its API connection; a **template** describes a reusable type of job. Store credentials separately, as described below.
+2. For real workflows, open **Configure platforms** and use the guided connection and template controls. Advanced JSON remains available. A **platform** describes its API connection; a **template** describes a reusable type of job. Store credentials separately, as described below.
 3. Choose the operation that matches your intent:
 
 | You want to… | Use | Effect |
@@ -53,7 +53,7 @@ Agents can register a run and then submit `{"action":"handoff","id":"LOCAL_RUN_I
 
 ## Platform configuration
 
-Use **Configure platforms**. By default, configuration is `<bot-home>/pipeyard/config.json`; active pipelines, History, notes and saved responses share `runs.json` (JSON, not CSV). Choose **Settings â†’ Home & folders â†’ Pipeyard storage** to copy them into another empty, absolute folder. The companion uses the new location immediately and retains the old files as a backup. A check/action must finish before the switch. The custom location persists across restarts and bot-home changes; animals and Board-owned tasks stay in bot home. Demo records remain browser-local. The companion stores the location pointer in its private `pipeyard-storage.json`. Empty configuration sends no requests. Adapters define a base URL, request paths, response-field mappings, and templates. The editor supplies a generic example; adapt it to your service before saving.
+Use **Configure platforms**. By default, configuration is `<bot-home>/pipeyard/config.json`; active pipelines, History, notes and saved responses share `runs.json` (JSON, not CSV). Choose **Settings → Home & folders → Pipeyard storage** to copy them into another empty, absolute folder. The companion uses the new location immediately and retains the old files as a backup. A check/action must finish before the switch. The custom location persists across restarts and bot-home changes; animals and Board-owned tasks stay in bot home. Demo records remain browser-local. The companion stores the location pointer in its private `pipeyard-storage.json`. Empty configuration sends no requests. Adapters define a base URL, request paths, response-field mappings, and templates. The editor supplies a generic example; adapt it to your service before saving.
 
 `status` is required; `trigger`, `progress`, `say`, `approve`, `pause`, and `resume` are optional. Reads use GET, mutations POST. Paths remain on the configured origin, `{runId}` is encoded, and dotted field mappings read JSON. Whole-value placeholders such as `{{input}}`, `{{runId}}`, `{{message}}`, and `{{decision}}` are data substitution, not scripts. Unmapped statuses remain unknown.
 
@@ -61,7 +61,7 @@ Credentials are references: `{"credential":{"env":"PIPEYARD_API_TOKEN"}}` or `{"
 
 ## Response mapping and display
 
-Each platform can configure `responses.status` and `responses.progress` independently. Templates may override either endpoint: mapping keys merge, explicit `null` disables a mapping, and an overridden `desk` replaces the whole display definition. The resulting settings are frozen into each new run. Saving configuration changes future runs only; it does not hide or erase content already exposed by an existing run.
+Each platform can configure `responses.status` and `responses.progress` independently. Templates may override either endpoint: mapping keys merge, explicit `null` disables a mapping, and an overridden `desk` replaces the whole display definition. The resulting settings are frozen into each new run. Saving configuration changes future runs. To update an existing run, review its settings comparison and explicitly apply the newer settings. This does not erase previously exposed data.
 
 Add a fragment like this to a platform or template (paths must match your service):
 
@@ -90,6 +90,18 @@ Status owns lifecycle and identity. Progress may add details but cannot mark a r
 For a service without quotes, explicitly set `"cost": null`. A cost-reporting service may use `"cost":"billing.total_usd"` in status mappings. Numeric zero is a valid quote; absent/invalid costs are **Not reported**. Legacy `cost_usd` mappings remain supported. Approval always rechecks current status and cost and requires renewed confirmation if either changes or cannot be verified, regardless of display mode.
 
 Sanitized status and progress responses are stored independently. An unchanged response retains its review ID; changed content invalidates that endpoint's review. A failed read preserves the last success and shows a separate last-attempt error. First load backs up legacy state as `runs.json.pre-responses-v1.bak` before migrating the old single response. No remote request is made by migration. Keep a backup before downgrading: version rollback does not undo this state change, and older clients cannot be assumed to enforce the new display rules. Hidden is a presentation/privacy boundary, not secure erasure of previously viewed or manually copied data.
+
+## Guided configuration and run settings
+
+Configure a platform connection first, then a template. Status is required and owns lifecycle. Progress can be enabled separately when an endpoint exists; response visibility controls presentation independently of polling. Template overrides take precedence over platform defaults.
+
+Choose the completion field and its scale: **0–100** for percentages or **0–1** for fractional completion. A standalone stage-name field can be shown without inventing a stage count. Summary modes are **Percentage**, **Stage**, **Both**, or **Status only**; stage text respects response privacy. A percentage of zero is a reported value, while a missing or invalid value is unknown.
+
+Use a sample response to preview extraction and presentation without contacting the service. An explicit connection test uses a supplied external run ID and read-only GETs; it never launches or registers work. The configuration editor keeps advanced JSON for settings outside the guided controls.
+
+Selected runs show effective settings, whether newer settings are available, and diagnostics for each endpoint. Preview changes before applying them. Existing identity, notes, credentials, external-operation permissions, paused/archived state and monitoring deadline are preserved. A configuration update makes no external request; use Check now when you want a fresh observation.
+
+If progress fails while status succeeds, the last reported percentage remains visible as **last known**, with its observation time. Endpoint diagnostics explain disabled, missing, delayed or failed checks. Where enabled, a final progress read collects final details after terminal status, subject to retry and monitoring boundaries. Percentages alone never complete a run.
 
 ## Monitoring and uncertainty
 

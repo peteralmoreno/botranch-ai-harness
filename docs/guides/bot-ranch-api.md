@@ -64,3 +64,9 @@ HTTP equivalent: `GET /admin/ai/feed?scope=pipeyard&limit=20` with the existing 
 Pipeyard `create-local`, `launch`, `register`, and `update-run` accept optional `ticketUrl` and `pipelineUrl`. Use plain HTTP(S) page URLs, without credentials or secret tokens; `null` clears a link. Link-only edits do not contact the platform. A retry of an existing registration returns the saved record; use `update-run` to change its links. Users edit them under **Full Pipeyard → Edit connection**, then click **Ticket / Jira** or **Pipeline page** in the desk or sidebar to open their browser.
 
 `GET /admin/pipeyard/storage` returns the effective folder and JSON file paths. `POST` accepts `{folder, expectedFolder}` to copy current runs/config into an empty absolute folder and switch storage. Original files remain as a backup; busy or stale changes return 409. This Settings-only route is unavailable through agent and widget APIs.
+
+## Effective Pipeyard settings
+
+Runs expose safe `configuration` revisions/settings, `endpointDiagnostics`, `progressFreshness`, and `summary`. Inspect can use `preview-settings {id}`. Operate may use `apply-settings {id,expectedRevision,targetRevision,confirmed:true}` after reviewing the comparison; busy/stale requests fail without changing the run. No platform request, credential change, identity change, deadline extension or tracking resume is implied.
+
+Human configuration tools use `POST /admin/pipeyard/preview` for sanitized sample extraction/display and `POST /admin/pipeyard/test-connection` with `{config,templateId,externalId}` for explicit read-only endpoint checks. These operations do not save runs or trigger workflows; agent and widget routes do not expose connection editing/testing.

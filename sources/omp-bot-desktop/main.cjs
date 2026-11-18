@@ -66,6 +66,7 @@ function createCompanionClient(credentials, fetchImpl = fetch, version = DESKTOP
       const error = Error('Companion request failed.');
       error.status=response.status;
       if(response.status===409&&payload?.code==='PIPEYARD_BUSY'&&payload?.retryable===true){error.code='PIPEYARD_BUSY';error.retryable=true;}
+      if(response.status===409&&payload?.code==='PIPEYARD_SETTINGS_CHANGED')error.code='PIPEYARD_SETTINGS_CHANGED';
       if ([400,409].includes(response.status) && typeof payload?.error === 'string') error.userMessage = policy.redact(payload.error.slice(0,700),[credentials.adminKey,credentials.pairingKey]);
       throw error;
     }
@@ -101,19 +102,21 @@ function createCompanionClient(credentials, fetchImpl = fetch, version = DESKTOP
       try {
         if(kind==='open-link'){if(!body||typeof body.id!=='string'||!['ticket','pipeline'].includes(body.link)||Object.keys(body).some(k=>!['id','link'].includes(k)))throw Error('Invalid link request.');return await openSavedLink(body);}
         if(kind==='snapshot')return {ok:true,result:await request('/admin/pipeyard/snapshot')};
-        const allowed=['set-check-interval','create-manager','start-manager','check-yard','handoff','set-appearance','note','refresh','check-due','pause-tracking','resume-tracking','clear','restore','delete'];
+        const allowed=['preview-settings','apply-settings','set-check-interval','create-manager','start-manager','check-yard','handoff','set-appearance','note','refresh','check-due','pause-tracking','resume-tracking','clear','restore','delete'];
         if(kind!=='action'||!body||!allowed.includes(body.action))throw Error('Unsupported pipeline action.');
         const managerAction=['create-manager','start-manager','check-yard'].includes(body.action);if(!managerAction&&(typeof body.id!=='string'||!/^[a-zA-Z0-9_-]{1,160}$/.test(body.id)))throw Error('Unsupported pipeline action.');
         const input={action:body.action,...(!managerAction?{id:body.id}:{})};
         if(['start-manager','check-yard','handoff'].includes(body.action)&&body.managerId!==undefined){if(typeof body.managerId!=='string'||!/^[a-zA-Z0-9_-]{1,80}$/.test(body.managerId))throw Error('Choose a manager.');input.managerId=body.managerId;}
         if(['check-yard','handoff'].includes(body.action)&&body.brief!==undefined){if(typeof body.brief!=='string'||body.brief.length>4000)throw Error('Handoff brief is too long.');input.brief=body.brief;}
+        if(body.action==='preview-settings'&&Object.keys(body).some(k=>!['action','id'].includes(k)))throw Error('Invalid settings preview.');
+        if(body.action==='apply-settings'){if(body.confirmed!==true||!['expectedRevision','targetRevision'].every(k=>typeof body[k]==='string'&&/^[a-f0-9]{64}$/.test(body[k]))||Object.keys(body).some(k=>!['action','id','expectedRevision','targetRevision','confirmed'].includes(k)))throw Error('Preview the current settings and confirm the update.');input.expectedRevision=body.expectedRevision;input.targetRevision=body.targetRevision;input.confirmed=true;}
         if(body.action==='delete'){if(body.confirmed!==true||!Number.isSafeInteger(body.expectedUpdatedAt)||body.expectedUpdatedAt<0)throw Error('Confirm deletion of the current History entry.');input.confirmed=true;input.expectedUpdatedAt=body.expectedUpdatedAt;}
         if(body.action==='set-check-interval'){const {intervals}=await import(pathToFileURL(path.join(companionPaths(__dirname).root,'setup/pipeyard-intervals.mjs')).href);if(!intervals.includes(body.intervalMinutes)||Object.keys(body).some(k=>!['action','id','intervalMinutes'].includes(k)))throw Error('Unsupported check frequency.');input.intervalMinutes=body.intervalMinutes;}
         if(body.action==='set-appearance'){if(body.shape!==undefined){if(!['standard','orchestrator','checkpoint','quick'].includes(body.shape))throw Error('Invalid pipe shape.');input.shape=body.shape;}if(body.color!==undefined){if(typeof body.color!=='string'||!/^#[a-f0-9]{6}$/i.test(body.color))throw Error('Invalid pipe color.');input.color=body.color;}if(input.shape===undefined&&input.color===undefined)throw Error('Choose a shape or color.');}
         if(body.action==='note'){if(typeof body.text!=='string'||!body.text.trim()||body.text.length>4000)throw Error('Use a note of 1 to 4000 characters.');input.text=body.text.trim();}
         if(body.action==='resume-tracking'){if(![10,20,40,60,120].includes(body.minutes))throw Error('Choose a supported monitoring budget.');input.minutes=body.minutes;}
         return {ok:true,result:await request('/admin/pipeyard/action',input)};
-      }catch(error){return {ok:false,error:error.userMessage||'The pipeline request could not be completed.',...(error.code==='PIPEYARD_BUSY'?{code:error.code,retryable:true}:{})};}
+      }catch(error){return {ok:false,error:error.userMessage||'The pipeline request could not be completed.',...(error.code==='PIPEYARD_BUSY'?{code:error.code,retryable:true}:error.code==='PIPEYARD_SETTINGS_CHANGED'?{code:error.code}:{})};}
     },
     async health(){try{const result=await request('/admin/health');lastSuccessAt=Date.now();return mapHealthPayload(result,version,credentials.origin,lastSuccessAt);}catch(error){return {status:error.status===401||error.status===403?'port-conflict':error.status?'unknown-service':/ECONNREFUSED/.test(String(error.cause?.message||error.message))?'offline':'unresponsive',origin:credentials.origin,lastSuccessAt,message:error.userMessage||'The companion health check did not complete.'};}},
     async shutdown(){try{await request('/admin/shutdown');return {ok:true};}catch(error){return {ok:false,status:error.status,error:error.userMessage||'The companion refused the shutdown request.'};}},

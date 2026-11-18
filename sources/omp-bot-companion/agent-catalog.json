@@ -1180,6 +1180,6 @@
     "snapshot": "GET /admin/ai/pipeyard/snapshot",
     "action": "POST /admin/ai/pipeyard/action",
     "cli": "pipeyard catalog|snapshot --json; pipeyard action --file action.json",
-    "description": "Independent external run tracking. Inspect reads; Organize adds local notes; Operate submits, tracks and operates. No adapter configuration via agent routes."
+    "description": "Independent external run tracking. Inspect reads snapshots and previews settings; Organize adds local notes; Operate applies explicitly confirmed revision-bound monitoring settings, submits, tracks and operates. No adapter configuration via agent routes."
   }
 }

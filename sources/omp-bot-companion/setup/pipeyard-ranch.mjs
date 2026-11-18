@@ -69,7 +69,7 @@ function decorate(){
    };
    const [label,path]=badges[state],badge=document.createElement('span');badge.className='pipe-state-icon';badge.dataset.state=state;badge.setAttribute('role','img');badge.setAttribute('aria-label',label);badge.title=label;
    badge.innerHTML='<svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="'+path+'"/></svg>';tile.append(badge);
-   const progress=tile.querySelector('.progress-label'),progressText=progress.textContent,parts=progressText.split(' · '),value=document.createElement('span');value.className='progress-value';value.textContent=progressText.includes('%')?parts[0]:'—';progress.replaceChildren(value);
+   const progress=tile.querySelector('.progress-label'),progressText=progress.dataset.summaryMode==='completion'?progress.textContent.replace(/(\d+(?:\.\d+)?%) complete\b/,'$1'):progress.textContent,value=document.createElement('span');value.className='progress-value';value.textContent=progressText;progress.classList.toggle('text-summary',progress.dataset.summaryMode!=='completion'||!/^\d+(\.\d+)?%$/.test(progressText));progress.replaceChildren(value);
    const row=document.createElement('div');row.className='pipeline-row';row.dataset.runId=id;
    tile.setAttribute('aria-keyshortcuts','ArrowLeft ArrowRight Home End');
    tile.addEventListener('keydown',event=>{

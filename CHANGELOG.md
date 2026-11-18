@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.0
+
+- Configure platforms and templates with guided controls, response previews, progress scales, and summary modes.
+- Preserve last-known progress through partial failures and explain endpoint freshness, disabled checks, and configuration drift.
+- Preview and explicitly apply current settings to an existing run without restarting it or extending its budget.
+- Expose safe effective settings and authorized update operations to agents and desktop controls.
+
 ## 1.1.10
 
 - Choose how many recent Pipeyard History entries to display, with matching Show more batches.

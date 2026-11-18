@@ -42,3 +42,34 @@ test('desktop windows permit the shared polling module and human-only preview wi
  const {allowedRequest}=require('../sources/omp-bot-desktop/companion-window.cjs'),ranch=require('../sources/omp-bot-desktop/ranch-window.cjs'),origin='http://127.0.0.1:43822';
  for(const url of ['/setup/pipeyard-intervals.mjs','/admin/pipeyard/preview','/admin/pipeyard/storage'])assert(allowedRequest(origin+url,origin));assert(ranch.allowedRequest(origin+'/setup/pipeyard-intervals.mjs',origin));assert.equal(allowedRequest('https://example.test/admin/pipeyard/preview',origin),false);
 });
+
+test('desktop settings updates require explicit revision-bound confirmation and preserve safe conflicts',async()=>{
+ const {createCompanionClient}=require('../sources/omp-bot-desktop/main.cjs'),calls=[];let conflict=false;
+ const client=createCompanionClient({origin:'http://127.0.0.1:43822',adminKey:'admin-secret',pairingKey:'pair-secret'},async(url,options)=>{calls.push({url,options});return conflict?{ok:false,status:409,json:async()=>({error:'Settings changed admin-secret',code:'PIPEYARD_SETTINGS_CHANGED',retryable:true,private:'secret'})}:{ok:true,json:async()=>({id:'run-1'})};});
+ const expectedRevision='a'.repeat(64),targetRevision='b'.repeat(64);
+ assert.equal((await client.pipeyard('action',{action:'preview-settings',id:'run-1'})).ok,true);
+ assert.equal((await client.pipeyard('action',{action:'apply-settings',id:'run-1',expectedRevision,targetRevision,confirmed:true})).ok,true);
+ assert.deepEqual(JSON.parse(calls[1].options.body),{action:'apply-settings',id:'run-1',expectedRevision,targetRevision,confirmed:true});
+ for(const extra of [{confirmed:false},{expectedRevision:''},{targetRevision:123},{input:{secret:'x'}}])assert.equal((await client.pipeyard('action',{action:'apply-settings',id:'run-1',expectedRevision,targetRevision,confirmed:true,...extra})).ok,false);
+ assert.equal((await client.pipeyard('action',{action:'preview-settings',id:'run-1',config:{}})).ok,false);assert.equal(calls.length,2);
+ conflict=true;assert.deepEqual(await client.pipeyard('action',{action:'apply-settings',id:'run-1',expectedRevision,targetRevision,confirmed:true}),{ok:false,error:'Settings changed [redacted]',code:'PIPEYARD_SETTINGS_CHANGED'});
+});
+test('desktop permits only same-origin connection testing and guided editor assets',()=>{
+ const origin='http://127.0.0.1:43822',{allowedRequest}=require('../sources/omp-bot-desktop/companion-window.cjs'),ranch=require('../sources/omp-bot-desktop/ranch-window.cjs');
+ assert.equal(allowedRequest(origin+'/admin/pipeyard/test-connection',origin),true);
+ assert.equal(allowedRequest('https://evil.test/admin/pipeyard/test-connection',origin),false);
+ for(const policy of [allowedRequest,ranch.allowedRequest])assert.equal(policy(origin+'/setup/pipeyard-editor.mjs',origin),true);
+});
+
+test('desktop summaries follow display mode and distinguish stale zero from unknown',()=>{
+ const React=require('react'),{renderToStaticMarkup}=require('react-dom/server'),vm=require('node:vm');
+ const built=require('esbuild').buildSync({entryPoints:['sources/omp-bot-desktop/PipeyardPanel.tsx'],bundle:true,write:false,platform:'node',format:'cjs',packages:'external',jsx:'automatic'});const module={exports:{}};vm.runInNewContext(built.outputFiles[0].text,{module,exports:module.exports,require});
+ const render=run=>renderToStaticMarkup(React.createElement(module.exports.PipeyardSummary,{run}));
+ assert.match(render({status:'running',progress:0,progressFreshness:{stale:true,at:123,reason:'Progress unavailable'}}),/Last known: 0%/);
+ assert.match(render({status:'running',progress:null}),/Progress unknown/);
+ assert.doesNotMatch(render({status:'running',progress:75,summary:{mode:'status',primary:'',secondary:null}}),/75%/);
+ const stage=render({status:'running',progress:75,summary:{mode:'stage',primary:'Verifying',secondary:null}});assert.match(stage,/Verifying/);assert.doesNotMatch(stage,/75%/);
+ const status=render({status:'running',progress:75,summary:{mode:'status',primary:'Running',secondary:null}});assert.match(status,/Running/);assert.doesNotMatch(status,/75%/);
+ const both=render({status:'running',summary:{mode:'both',primary:'75%',secondary:'Verifying'},progressFreshness:{stale:true}});assert.match(both,/Last known/);assert.match(both,/Verifying/);
+ const diagnostic=renderToStaticMarkup(React.createElement(module.exports.EndpointDiagnostics,{source:'progress',diagnostic:{enabled:false,state:'disabled',reason:'Disabled by template',lastSuccessAt:123,lastAttemptAt:456,error:null}}));assert.match(diagnostic,/Disabled by template/);assert.match(diagnostic,/Last success/);
+});

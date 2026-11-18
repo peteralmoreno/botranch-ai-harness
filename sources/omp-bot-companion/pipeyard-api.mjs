@@ -25,13 +25,14 @@ export function createPipeyardApi(manager){
     if(!ai&&['creatures','ranch-creatures'].includes(route)&&['GET','POST'].includes(method)){const scope=manager.library.root;if(method==='POST'&&body?.scope!==scope)return {status:409,body:{error:'Bot home changed. Reload the yard before saving animals.'}};const store=creatureStore.createCreatureStore(path.join(scope,route==='ranch-creatures'?'ranch':'pipeyard','creatures.json'),{empty:route==='ranch-creatures'});return {status:200,body:{...(method==='GET'?store.read():store.save(body)),scope}};}
     if(method==='GET'&&route==='catalog')return {status:200,body:pipeyardCatalog};
     if(method==='GET'&&route==='snapshot'){const snapshot=yard().snapshot();return {status:200,body:{...snapshot,...stewards.snapshot([...snapshot.runs,...boardRuns(manager).map(r=>({...r,shape:'standard',...yard().boardAppearances[r.id]}))])}};}
+    if(!ai&&method==='POST'&&route==='test-connection')return {status:200,body:await yard().testConnection(body)};
     if(!ai&&method==='POST'&&route==='preview')return {status:200,body:{preview:yard().preview(body)}};
     if(!ai&&method==='GET'&&route==='config')return {status:200,body:yard().configuration()};
     if(!ai&&method==='POST'&&route==='config')return {status:200,body:body?.reload===true?yard().reload():yard().configure(body)};
     if(method==='POST'&&route==='action'){
      const {action,...input}=body||{};
      if(ai&&['create-manager','start-manager'].includes(action))return {status:403,body:{error:'Create managers through the Pipeyard controls or Factory.'}};
-     if(ai){const mode=manager.aiState?.access;if(mode!=='operate'&&!(mode==='organize'&&pipeyardCatalog.permissions.organize.includes(action)))return {status:403,body:{error:'This action requires '+(pipeyardCatalog.permissions.organize.includes(action)?'Organize':'Operate')+' access in AI Sync.'}};}
+     if(ai){const mode=manager.aiState?.access;if(mode!=='operate'&&!(['inspect','organize'].includes(mode)&&pipeyardCatalog.permissions.inspect.includes(action))&&!(mode==='organize'&&pipeyardCatalog.permissions.organize.includes(action)))return {status:403,body:{error:'This action requires '+(pipeyardCatalog.permissions.organize.includes(action)?'Organize':'Operate')+' access in AI Sync.'}};}
      if(action==='start-manager'){const p=stewards.profiles().find(p=>p.id===input.managerId);if(!p)throw Error('Choose an active Pipeyard manager.');return {status:200,body:await manager.action(p.id,'resume')};}
      if(action==='create-manager')return {status:200,body:stewards.create(input)};
      if(['handoff','check-yard'].includes(action))return {status:200,body:stewards.handoff(input,yard().snapshot().runs,action==='check-yard')};
@@ -41,7 +42,7 @@ export function createPipeyardApi(manager){
      return {status:200,body:await yard().execute(action,input)};
     }
     return {status:404,body:{error:'Unknown Pipeyard route.'}};
-   }catch(error){return {status:error.status===409?409:400,body:{error:error instanceof SyntaxError?'Pipeyard configuration or state contains invalid JSON.':error.message,...(error.code==='PIPEYARD_BUSY'?{code:error.code,retryable:true}:{}),...(error.code==='PIPEYARD_LIMIT'?{code:error.code,limit:error.limit}:{})}};}
+   }catch(error){return {status:error.status===409?409:400,body:{error:error instanceof SyntaxError?'Pipeyard configuration or state contains invalid JSON.':error.message,...(error.code==='PIPEYARD_SETTINGS_CHANGED'?{code:error.code}:{}),...(error.code==='PIPEYARD_BUSY'?{code:error.code,retryable:true}:{}),...(error.code==='PIPEYARD_LIMIT'?{code:error.code,limit:error.limit}:{})}};}
   }
  };
 }

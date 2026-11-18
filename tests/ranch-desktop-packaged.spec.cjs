@@ -119,6 +119,16 @@ test('installed ZIP mounts real UI, packaged Pipeline Desk/Ranch assets and resp
  await desk.evaluate(()=>window.open('https://unregistered.example.test/'));
  await expect(desk.getByLabel('Check frequency',{exact:true})).toHaveValue('2');
  expect(await desk.locator('body').textContent()).not.toMatch(/PRIVATE_STATUS_FIXTURE|PRIVATE_PROGRESS_FIXTURE/);
+ await desk.getByRole('button',{name:'Configure platforms',exact:true}).click();
+ await expect(desk.getByLabel('Platform',{exact:true})).toBeVisible();
+ await desk.getByLabel('Run summary',{exact:true}).selectOption('both');
+ await desk.getByLabel('Check interval',{exact:true}).selectOption('2');
+ await desk.getByRole('button',{name:'Validate & save',exact:true}).click();
+ await expect.poll(()=>session.page.evaluate(async id=>(await window.botRanch.pipeyard('snapshot')).result.runs.find(r=>r.id===id).configuration.updateAvailable,fixture.runId)).toBe(true);
+ await session.page.getByRole('button',{name:'Preview settings update',exact:true}).click();
+ await session.page.getByRole('button',{name:'Apply reviewed settings',exact:true}).click();
+ await expect.poll(()=>session.page.evaluate(async id=>(await window.botRanch.pipeyard('snapshot')).result.runs.find(r=>r.id===id).configuration.summary.mode,fixture.runId)).toBe('both');
+ expect(await session.page.evaluate(async id=>(await window.botRanch.pipeyard('snapshot')).result.runs.find(r=>r.id===id).tracking,fixture.runId)).toBe('paused');
  await session.page.getByRole('button',{name:'Visual Ranch',exact:true}).click();
  await expect.poll(()=>session.app.windows().some(p=>p.url().includes('/ui/'))).toBe(true);
  const ranch=session.app.windows().find(p=>p.url().includes('/ui/'));

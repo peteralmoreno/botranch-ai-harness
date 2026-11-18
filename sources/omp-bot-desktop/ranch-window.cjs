@@ -1,7 +1,7 @@
 'use strict';
 const path = require('node:path');
 const {ranchPlacement} = require('./window-policy.cjs');
-const assets = new Set(['/setup/pipeline-links.mjs','/setup/pipeyard-intervals.mjs','/ui/ranch-animals.js','/setup/yard-animal-art.mjs','/setup/bot-palette.mjs','/setup/pipeyard-ranch.mjs','/setup/pipeyard-ranch.css','/setup/yard-creatures.mjs','/setup/yard-creature-behavior.mjs','/pipeyard/','/setup/pipeyard.js','/setup/pipeyard.css','/setup/pipeyard-demo.mjs','/setup/pipeyard-feed.mjs','/ui/','/ui/app.js','/ui/widget.css','/ui/world.js','/ui/sprites.js','/ui/appearance.js','/ui/resources/icon.svg']);
+const assets = new Set(['/setup/pipeline-links.mjs','/setup/pipeyard-intervals.mjs','/setup/pipeyard-editor.mjs','/ui/ranch-animals.js','/setup/yard-animal-art.mjs','/setup/bot-palette.mjs','/setup/pipeyard-ranch.mjs','/setup/pipeyard-ranch.css','/setup/yard-creatures.mjs','/setup/yard-creature-behavior.mjs','/pipeyard/','/setup/pipeyard.js','/setup/pipeyard.css','/setup/pipeyard-demo.mjs','/setup/pipeyard-feed.mjs','/ui/','/ui/app.js','/ui/widget.css','/ui/world.js','/ui/sprites.js','/ui/appearance.js','/ui/resources/icon.svg']);
 function allowedRequest(value, origin) {
   try {
     const url=new URL(value);

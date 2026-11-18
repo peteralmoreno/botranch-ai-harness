@@ -10,9 +10,9 @@ test('local estimates persist, stay local, and defer to platform percentages inc
  reported=0;advance(1000);view=await yard.execute('refresh',{id:run.id});assert.equal(view.displayProgress,0);assert.equal(view.progressSource,'platform');assert.equal(view.progressEstimate.percent,62);
  reported=35;view=await yard.execute('refresh',{id:run.id});assert.equal(view.displayProgress,35);
  reported=100;view=await yard.execute('refresh',{id:run.id});assert.equal(view.displayProgress,100);assert.equal(view.status,'running');assert.equal(view.progressSource,'platform');
- reported=null;view=await yard.execute('refresh',{id:run.id});assert.equal(view.displayProgress,62);assert.equal(view.progressSource,'estimate');
- const {Pipeyard}=await load();const restored=new Pipeyard({root}).snapshot().runs[0];assert.deepEqual(restored.progressEstimate,view.progressEstimate);assert.equal(restored.displayProgress,62);
- view=await yard.execute('estimate-progress',{id:run.id,percent:null,reason:'Earlier assumption no longer applies.',author:'Scout'});assert.equal(view.displayProgress,null);assert.equal(view.progressEstimate,null);
+ reported=null;view=await yard.execute('refresh',{id:run.id});assert.equal(view.displayProgress,100);assert.equal(view.progressSource,'platform');assert.equal(view.progressFreshness.stale,true);
+ const {Pipeyard}=await load();const restored=new Pipeyard({root}).snapshot().runs[0];assert.deepEqual(restored.progressEstimate,view.progressEstimate);assert.equal(restored.displayProgress,100);
+ view=await yard.execute('estimate-progress',{id:run.id,percent:null,reason:'Earlier assumption no longer applies.',author:'Scout'});assert.equal(view.displayProgress,100);assert.equal(view.progressEstimate,null);
  await yard.execute('estimate-progress',{id:run.id,percent:99,reason:'Waiting for confirmation.',author:'Scout'});
  status='done';view=await yard.execute('refresh',{id:run.id});assert.equal(view.displayProgress,100);assert.equal(view.progressSource,'completed');
  await assert.rejects(yard.execute('estimate-progress',{id:run.id,percent:90,reason:'Late update',author:'Scout'}),/finished/i);

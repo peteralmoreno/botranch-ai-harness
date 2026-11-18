@@ -102,6 +102,12 @@ When a run has no platform percentage, use `estimate-progress` with `id`, `perce
 
 One bot can check many Pipeyard runs. Polling is performed by the companion without model calls; use bounded agent checks for decisions, not repeated reasoning just to wait. An optional Board task link is informational and does not finish the task automatically. Existing Board Pipeline tasks continue to use their own ownership and lifecycle; Pipeyard shows them with `source: "board"`.
 
+## Pipeyard configuration diagnostics
+
+Read a run's `configuration`, `endpointDiagnostics`, `progressFreshness`, and `summary` before troubleshooting a missing percentage. Status owns lifecycle; progress and stage counts never establish completion. Keep stale/last-known values qualified, and never infer hidden response text from summaries. Configuration snapshots omit credentials and connection secrets.
+
+`preview-settings` with a local run `id` is available in Inspect mode. Review its `changes`, `canApply`, and `reason`. Applying requires delegated Operate authority and `apply-settings` with `id`, `expectedRevision`, `targetRevision`, and `confirmed:true` from the reviewed preview. Re-preview stale conflicts; do not overwrite revisions to force a change. Applying updates local read/display configuration without making platform calls, extending monitoring time, resuming a paused run, or altering external identity. Credential and connection editing remains in user Settings.
+
 ## Troubleshooting observed workflow issues
 
 - In PowerShell, invoke a quoted `.cmd` path with `&`, as above. From another shell, use its own quoting syntax or `node` with the absolute `ranch-cli.mjs` path supplied by AI Sync. A shell quoting failure occurs before the API is called.

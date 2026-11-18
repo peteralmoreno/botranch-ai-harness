@@ -1,6 +1,6 @@
 # botRanch AI Harness
 
-Version **1.1.10**. [Download the latest release](https://github.com/peteralmoreno/botranch-ai-harness/releases/latest).
+Version **1.2.0**. [Download the latest release](https://github.com/peteralmoreno/botranch-ai-harness/releases/latest).
 
 A Windows companion for local AI work, with a playful Ranch view for desktop or Corsair XENEON EDGE.
 
